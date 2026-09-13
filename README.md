@@ -55,6 +55,22 @@ copy .env.example .env
 
 Open `.env` and fill in `DISCORD_BOT_TOKEN` and `DISCORD_STATUS_CHANNEL_ID`.
 
+**`.gitignore` check:** `.env` holds your live bot token and must never be
+committed - `.gitignore` already excludes it (along with `last_status.json`,
+`wardogs_status.log`, and `__pycache__/`, none of which need to be tracked
+either). Before committing anything, confirm it's actually being ignored:
+
+```bash
+git status              # .env should NOT appear under "Changes to be committed"
+git check-ignore -v .env   # should print a line confirming .gitignore is catching it
+```
+
+If a change to `.gitignore` itself, or to what's staged, ever causes `.env`
+to show up in `git status`, stop and fix that before committing - don't
+push a commit that includes it. If it's already been committed, the fix is
+more involved than just deleting it (it stays in git history) - regenerate
+the token immediately and ask for help removing it from history.
+
 ## 4. Tune the capture region (do this once, without touching Discord)
 
 Launch Wardogs, join a match, hit **Esc** so the panel with `CURRENT SERVER`
