@@ -1,5 +1,7 @@
 # Wardogs -> Discord status message
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Watches your screen for the `CURRENT SERVER` / `SERVER ID` text on the
 Wardogs pause menu (Esc), and keeps a single Discord message updated with
 it - the bot edits the same message in place rather than posting a new one
