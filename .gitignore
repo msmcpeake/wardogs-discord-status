@@ -1,0 +1,10 @@
+# Secrets - never commit
+.env
+
+# Local runtime state / logs
+last_status.json
+wardogs_status.log
+
+# Python
+__pycache__/
+*.pyc

@@ -1,0 +1,7 @@
+mss
+psutil
+pytesseract
+python-dotenv
+pillow
+requests
+pystray
