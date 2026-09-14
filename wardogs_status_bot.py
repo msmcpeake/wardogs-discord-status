@@ -95,10 +95,13 @@ NUM_RE = re.compile(r"#\s*(\d+)")
 # Tesseract's PSM 6 fallback (see capture_and_parse) merge "PRESS" with
 # adjacent image noise in practice, while the rest stays intact.
 MENU_RE = re.compile(r"EARLY\s*ACCESS|ANY\s*BUTTON\s*TO\s*START", re.IGNORECASE)
-# DEPLOY alone isn't safe (many shooters show a "REDEPLOY" prompt after
-# dying mid-match) - require it together with "SERVER BROWSER" (the
-# subtitle under the same button on the main menu) to be specific enough.
-DEPLOY_RE = re.compile(r"DEPLOY", re.IGNORECASE)
+# "SERVER BROWSER" shows up as the main menu button's subtitle AND as the
+# browser list screen's own page header (with or without a queue active) -
+# covering the whole menu/browsing flow on its own, so it doesn't need to
+# be paired with "DEPLOY" (which isn't safe alone - many shooters show a
+# "REDEPLOY" prompt mid-match - but was never the issue; dropping it fixed
+# a bug where leaving a queue without joining left the status stuck on
+# "Queued for..." forever, since the plain server list has no DEPLOY text).
 SERVER_BROWSER_RE = re.compile(r"SERVER\s*BROWSER", re.IGNORECASE)
 # The server-browser queue bar: "IN SERVER QUEUE... Position N of M",
 # followed on the next line by the target server's name (region + number,
@@ -202,7 +205,7 @@ def determine_status(text: str):
         return queue_status
     if MENU_RE.search(text):
         return NOT_IN_GAME
-    if DEPLOY_RE.search(text) and SERVER_BROWSER_RE.search(text):
+    if SERVER_BROWSER_RE.search(text):
         return NOT_IN_GAME
     return None
 
