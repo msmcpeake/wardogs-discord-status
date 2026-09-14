@@ -83,8 +83,10 @@ log = logging.getLogger("wardogs-status")
 
 NAME_RE = re.compile(r"CURRENT\s*SERVER[:.\s]*(.+)", re.IGNORECASE)
 # [I1l] tolerates "ID" getting OCR'd as "1D" (seen in practice), same idea
-# as the [0-9OolI] digit class below tolerating O/0 and l/I/1 mixups.
-ID_RE = re.compile(r"SERVER\s*[I1l]D[^0-9OolI]*([0-9OolI]{3}\s*-\s*[0-9OolI]{3})", re.IGNORECASE)
+# as the [0-9OolI] digit class below tolerating O/0 and l/I/1 mixups. The
+# dash is optional - most servers show "NNN-NNN" but some show a plain
+# 6-digit "NNNNNN" with no separator at all (seen in practice too).
+ID_RE = re.compile(r"SERVER\s*[I1l]D[^0-9OolI]*([0-9OolI]{3}\s*-?\s*[0-9OolI]{3})", re.IGNORECASE)
 REGION_RE = re.compile(r"\(([^)|#]+)\)?")
 NUM_RE = re.compile(r"#\s*(\d+)")
 # Markers for "not actually in a match": the "EARLY ACCESS" watermark on the
