@@ -33,7 +33,7 @@ import re
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import mss
 import psutil
@@ -251,13 +251,25 @@ STATUS_EMOJI = "<:blue:1548650924782653561>"  # :blue: from the Wardogs Discord,
                                                # since bots can only render custom emoji from guilds they're in
 
 
+def _round_to_nearest_5_minutes(dt: datetime) -> datetime:
+    """Purely cosmetic: rounds the embed's displayed 'Last updated' time to
+    the nearest 5-minute mark (e.g. 1:38 -> 1:40) since round numbers read
+    cleaner. Doesn't affect anything else - heartbeat timing and
+    last_status.json still use the real, unrounded time."""
+    discard = timedelta(minutes=dt.minute % 5, seconds=dt.second, microseconds=dt.microsecond)
+    dt -= discard
+    if discard >= timedelta(minutes=2, seconds=30):
+        dt += timedelta(minutes=5)
+    return dt
+
+
 def _build_embed(text: str):
     description = text if text == NOT_IN_GAME else f"{STATUS_EMOJI} │ {text}"
     return {
         "title": "Current Wardogs Server",
         "description": description,
         "color": EMBED_COLOR_NOT_IN_GAME if text == NOT_IN_GAME else EMBED_COLOR_IN_GAME,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": _round_to_nearest_5_minutes(datetime.now(timezone.utc)).isoformat(),
         "footer": {"text": "Last updated"},
     }
 
