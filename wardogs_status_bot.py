@@ -251,16 +251,16 @@ STATUS_EMOJI = "<:blue:1548650924782653561>"  # :blue: from the Wardogs Discord,
                                                # since bots can only render custom emoji from guilds they're in
 
 
-def _round_to_nearest_5_minutes(dt: datetime) -> datetime:
-    """Purely cosmetic: rounds the embed's displayed 'Last updated' time to
-    the nearest 5-minute mark (e.g. 1:38 -> 1:40) since round numbers read
-    cleaner. Doesn't affect anything else - heartbeat timing and
-    last_status.json still use the real, unrounded time."""
+def _round_down_to_5_minutes(dt: datetime) -> datetime:
+    """Purely cosmetic: floors the embed's displayed 'Last updated' time to
+    the 5-minute mark at or before it (e.g. 1:38 -> 1:35) since round
+    numbers read cleaner. Always rounds down, never up - rounding up could
+    show a timestamp later than the moment it was actually sent, which
+    would look like it's from the future. Doesn't affect anything else -
+    heartbeat timing and last_status.json still use the real, unrounded
+    time."""
     discard = timedelta(minutes=dt.minute % 5, seconds=dt.second, microseconds=dt.microsecond)
-    dt -= discard
-    if discard >= timedelta(minutes=2, seconds=30):
-        dt += timedelta(minutes=5)
-    return dt
+    return dt - discard
 
 
 def _build_embed(text: str):
@@ -269,7 +269,7 @@ def _build_embed(text: str):
         "title": "Current Wardogs Server",
         "description": description,
         "color": EMBED_COLOR_NOT_IN_GAME if text == NOT_IN_GAME else EMBED_COLOR_IN_GAME,
-        "timestamp": _round_to_nearest_5_minutes(datetime.now(timezone.utc)).isoformat(),
+        "timestamp": _round_down_to_5_minutes(datetime.now(timezone.utc)).isoformat(),
         "footer": {"text": "Last updated"},
     }
 
