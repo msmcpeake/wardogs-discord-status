@@ -60,6 +60,10 @@ DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_STATUS_CHANNEL_ID = os.getenv("DISCORD_STATUS_CHANNEL_ID")
 GAME_PROCESS_SUBSTRING = os.getenv("GAME_PROCESS_SUBSTRING", "wardogs")
 POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "4"))
+# How often (seconds) to re-send the current status even when it hasn't
+# changed, purely to refresh the embed's "Last updated" timestamp - so a
+# long stretch on the same server doesn't make the message look stale/dead.
+HEARTBEAT_INTERVAL_SECONDS = float(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300"))
 
 # Fraction of the screen to crop before OCR: "left,top,right,bottom" as 0-1
 # fractions. Default covers the bottom ~35% of the screen: the bottom-right
@@ -175,14 +179,21 @@ def determine_status(text: str):
 
 
 def load_state():
+    """Returns (status, message_id, updated_at_epoch_seconds_or_None)."""
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get("status"), data.get("message_id")
+            updated_at = None
+            if data.get("updated_at"):
+                try:
+                    updated_at = datetime.fromisoformat(data["updated_at"]).timestamp()
+                except ValueError:
+                    pass
+            return data.get("status"), data.get("message_id"), updated_at
         except (OSError, json.JSONDecodeError):
-            return None, None
-    return None, None
+            return None, None, None
+    return None, None, None
 
 
 def save_state(status: str, message_id: str):
@@ -278,7 +289,9 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
     if stop_event is None:
         stop_event = threading.Event()  # never set - just lets the loop below use one code path
 
-    last_status, message_id = load_state()
+    last_status, message_id, last_applied_at = load_state()
+    if last_applied_at is None:
+        last_applied_at = time.time()
     log.info("Watching for '%s' process. Last known status: %s", GAME_PROCESS_SUBSTRING, last_status)
     if on_status:
         on_status(last_status)
@@ -291,7 +304,7 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
     game_was_running = False
 
     def apply(status):
-        nonlocal last_status, message_id, cooldown_until
+        nonlocal last_status, message_id, cooldown_until, last_applied_at
         if time.time() < cooldown_until:
             return  # still cooling down from a rate limit, try again later
         if dry_run:
@@ -307,6 +320,7 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
                 return
             else:
                 return
+        last_applied_at = time.time()
         if on_status:
             on_status(last_status)
 
@@ -331,6 +345,11 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
                     # flaky OCR read), so no need to debounce it.
                     apply(NOT_IN_GAME)
             game_was_running = running
+
+            # Heartbeat: nothing changed, but refresh the timestamp anyway
+            # so a long stretch on the same server doesn't look stale.
+            if last_status is not None and time.time() - last_applied_at >= HEARTBEAT_INTERVAL_SECONDS:
+                apply(last_status)
         except KeyboardInterrupt:
             log.info("Stopping.")
             break

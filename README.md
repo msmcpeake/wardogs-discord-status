@@ -116,6 +116,14 @@ a spurious update). State (last status + the message ID it's editing) is
 tracked in `last_status.json`, so restarting the script won't create a
 duplicate message.
 
+It also re-sends the current status every `HEARTBEAT_INTERVAL_SECONDS`
+(default 300 = 5 min) even when nothing has changed, purely to refresh the
+embed's "Last updated" timestamp - so sitting on one server for a while
+doesn't make the message look stale or make people think you're on an old
+server. If the last real update was already older than that when the
+script (re)starts, it refreshes immediately rather than waiting out a full
+interval.
+
 ## 6. Run it in the background permanently (already set up)
 
 `python wardogs_status_bot.py` with no flags shows a **system tray icon**
