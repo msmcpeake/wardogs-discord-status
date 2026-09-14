@@ -187,11 +187,23 @@ def parse_queue(text: str):
 
     region_match = REGION_RE.search(tail)
     num_match = NUM_RE.search(tail)
-    if not (region_match and num_match):
-        return f"Queued (position {position} of {total})"
-    region = region_match.group(1).strip()
-    num = num_match.group(1).strip()
-    return f"Queued for {region} #{num} (position {position} of {total})"
+    if region_match and num_match:
+        region = region_match.group(1).strip()
+        num = num_match.group(1).strip()
+        return f"Queued for {region} #{num} (position {position} of {total})"
+
+    # The queue bar doesn't always repeat the target server's name/number
+    # right after "Position N of M" - seen in practice, the layout varies
+    # (e.g. a countdown timer or "SERVER ID" line can sit there instead).
+    # Fall back to the server ID: it's unambiguous (only ever one in the
+    # captured text) even without the friendlier region/# label.
+    id_match = ID_RE.search(text)
+    if id_match:
+        fixed = id_match.group(1).translate(str.maketrans("OolI", "0011"))
+        server_id = re.sub(r"\s*-\s*", "-", fixed)
+        return f"Queued (ID {server_id}, position {position} of {total})"
+
+    return f"Queued (position {position} of {total})"
 
 
 def determine_status(text: str):
