@@ -100,6 +100,13 @@ MENU_RE = re.compile(r"EARLY\s*ACCESS|ANY\s*BUTTON\s*TO\s*START", re.IGNORECASE)
 # subtitle under the same button on the main menu) to be specific enough.
 DEPLOY_RE = re.compile(r"DEPLOY", re.IGNORECASE)
 SERVER_BROWSER_RE = re.compile(r"SERVER\s*BROWSER", re.IGNORECASE)
+# The server-browser queue bar: "IN SERVER QUEUE... Position N of M",
+# followed on the next line by the target server's name (region + number,
+# no dashed ID there) and map. Capturing everything after "of M" lets
+# region/num be pulled from just that line - not searched globally - so it
+# can't accidentally match one of the many other server entries listed
+# above it on the same screen.
+QUEUE_RE = re.compile(r"SERVER\s*QUEUE.*?POSITION\s*(\d+)\s*OF\s*(\d+)(.*)", re.IGNORECASE | re.DOTALL)
 
 NOT_IN_GAME = "Matrix is not in a game"
 
@@ -163,14 +170,36 @@ def parse_server(text: str):
     return f"{region} #{num} \u00b7 ID {server_id}"
 
 
+def parse_queue(text: str):
+    """Returns a "queued for server X, position N of M" status, or None if
+    no queue bar is showing. Deliberately excludes the queue's countdown
+    timer (it ticks every second, which would turn into a spurious status
+    "change" - and therefore a Discord update - on nearly every poll)."""
+    m = QUEUE_RE.search(text)
+    if not m:
+        return None
+    position, total, tail = m.group(1), m.group(2), m.group(3)
+
+    region_match = REGION_RE.search(tail)
+    num_match = NUM_RE.search(tail)
+    if not (region_match and num_match):
+        return f"Queued (position {position} of {total})"
+    region = region_match.group(1).strip()
+    num = num_match.group(1).strip()
+    return f"Queued for {region} #{num} (position {position} of {total})"
+
+
 def determine_status(text: str):
-    """Returns a server status, NOT_IN_GAME, or None (ambiguous - e.g.
-    actively playing with the pause menu closed, where neither the server
-    panel nor the menu watermark is visible; leave whatever status is
-    already showing alone rather than guessing)."""
+    """Returns a server status, a queue status, NOT_IN_GAME, or None
+    (ambiguous - e.g. actively playing with the pause menu closed, where
+    none of the above are visible; leave whatever status is already
+    showing alone rather than guessing)."""
     status = parse_server(text)
     if status:
         return status
+    queue_status = parse_queue(text)
+    if queue_status:
+        return queue_status
     if MENU_RE.search(text):
         return NOT_IN_GAME
     if DEPLOY_RE.search(text) and SERVER_BROWSER_RE.search(text):

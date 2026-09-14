@@ -154,6 +154,11 @@ path (ask me to redo it, or open Task Scheduler -> find
   `Central #12 · ID 509-791`), built in `parse_server()` in
   `wardogs_status_bot.py` - edit that function if you want a different
   format.
+- While queued for a server (the "IN SERVER QUEUE... Position N of M" bar
+  in the server browser), the status shows `Queued for Region #N (position
+  X of Y)` instead - see `parse_queue()`. The queue's countdown timer is
+  deliberately not included (it ticks every second, which would otherwise
+  count as a status "change" on nearly every poll).
 - If Wardogs UI scaling/resolution changes, you may need to re-tune
   `CAPTURE_REGION` (step 4).
 - If you ever see 403 `Missing Access`/`Missing Permissions` errors again
