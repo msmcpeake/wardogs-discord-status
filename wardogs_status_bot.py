@@ -488,7 +488,8 @@ def capture_and_parse():
         squad = parse_squad(squad_text)
         if squad:
             squad_name, members = squad
-            status = f"{status}\nSquad {squad_name}: {', '.join(members)}"
+            member_lines = "\n".join(members)
+            status = f"{status}\n\nSquad {squad_name}:\n{member_lines}"
 
     return text, status, team
 
