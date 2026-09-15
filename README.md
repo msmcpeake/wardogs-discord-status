@@ -177,16 +177,21 @@ path (ask me to redo it, or open Task Scheduler -> find
 - While the pause menu is open (the same moment as a genuine server
   reading), the status also gains a squad section - blank line, "Squad
   NAME:", then one member per line - see `parse_squad()` and
-  `SQUAD_REGION`. "Your" squad is identified by the "Leave Squad" button,
-  which Wardogs only shows under the squad you're actually in (every other
-  squad shows "Join Squad" or "Locked"). Two OCR passes with different
-  preprocessing are combined (`preprocess()` and the HSV-based
-  `preprocess_squad()`): the player's own row has a highlighted background
-  that's unreadable under standard grayscale but fine under the HSV one,
-  while the reverse was true for the "Leave Squad" text itself on the same
-  real capture - confirmed by directly comparing both against it. Tell me
-  if a member name ever comes through wrong and I'll dig into the specific
-  capture.
+  `SQUAD_REGION`. "Your" squad is identified two ways, tried in order
+  (neither alone was reliable enough in practice): your own name
+  (`PLAYER_NAME` in `.env`, defaults to "MATRIX") appearing on your
+  highlighted row, falling back to the "Leave Squad" button (which
+  Wardogs only shows under the squad you're actually in) if your name
+  wasn't read in a given OCR pass - a real capture with a longer squad
+  list dropped "Leave Squad" from OCR entirely while the name itself
+  still read fine, and separately, the reverse was true on a different
+  capture. Two OCR passes with different preprocessing are combined
+  (`preprocess()` and the HSV-based `preprocess_squad()` - the player's
+  own highlighted row needs the HSV one to read at all) and reconciled,
+  with fuzzy matching (`_is_near_duplicate_member`) so the same person
+  read slightly differently between passes (e.g. "SDWJ1234" vs
+  "SDWUJ1234") doesn't show up twice. Tell me if a member name ever comes
+  through wrong and I'll dig into the specific capture.
 - If Wardogs UI scaling/resolution changes, you may need to re-tune
   `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION`/`SQUAD_REGION`
   too.

@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import colorsys
+import difflib
 import json
 import math
 import logging
@@ -61,6 +62,13 @@ pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_STATUS_CHANNEL_ID = os.getenv("DISCORD_STATUS_CHANNEL_ID")
 GAME_PROCESS_SUBSTRING = os.getenv("GAME_PROCESS_SUBSTRING", "wardogs")
+# The player's own in-game name (or a distinctive substring of it, e.g.
+# without the clan tag) - used to identify their own row on the squad
+# panel directly. More robust than relying solely on the "Leave Squad"
+# button text, which a real capture showed can drop from OCR entirely on
+# a longer squad list, even though the highlighted name row itself still
+# read fine.
+PLAYER_NAME = os.getenv("PLAYER_NAME", "MATRIX")
 POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "4"))
 # How often (seconds) to re-send the current status even when it hasn't
 # changed, purely to refresh the embed's "Last updated" timestamp - so a
@@ -293,25 +301,62 @@ def _clean_squad_member(line: str):
     return None
 
 
+def _is_near_duplicate_member(name: str, existing_members):
+    """True if `name` is a near-identical OCR variant of an already-added
+    member (e.g. "SDWJ1234" vs "SDWUJ1234" - the same person read slightly
+    differently between two preprocessing passes, seen in practice), so it
+    doesn't get added as if it were a second, different person. The 0.85
+    similarity threshold comfortably separates real single-character OCR
+    slips (~0.9+) from genuinely different names (well under 0.3 even for
+    short ones), confirmed against real examples."""
+    return any(difflib.SequenceMatcher(None, name.upper(), m.upper()).ratio() > 0.85 for m in existing_members)
+
+
+def _members_between(lines, header_idx: int):
+    """Member lines between a squad's header (at `header_idx`) and the
+    next terminator - another squad's header, or one of the three action
+    buttons every squad shows exactly one of."""
+    end_idx = len(lines)
+    for j in range(header_idx + 1, len(lines)):
+        if SQUAD_HEADER_RE.search(lines[j]) or _SQUAD_TERMINATOR_RE.search(lines[j]):
+            end_idx = j
+            break
+    return lines[header_idx + 1:end_idx]
+
+
 def _squad_header_and_members(text: str):
-    """Finds the player's own squad via the "Leave Squad" anchor (see
-    parse_squad) and returns (squad_name, member_lines_from_this_pass), or
-    None if this particular OCR pass doesn't contain that anchor at all."""
-    upper = text.upper()
-    idx = upper.find("LEAVE SQUAD")
-    if idx == -1:
-        # "SQUAD" occasionally drops from OCR - "LEAVE" alone is still
-        # unambiguous here since SQUAD_REGION doesn't reach far enough down
-        # to include the separate "Leave Match" button.
-        idx = upper.find("LEAVE")
-    if idx == -1:
-        return None
-    lines = [ln.strip() for ln in text[:idx].splitlines() if ln.strip()]
+    """Finds the player's own squad in a single OCR pass and returns
+    (squad_name, member_lines_from_this_pass), or None. Two independent
+    signals, tried in order - neither alone was reliable enough in
+    practice:
+    1. The player's own name (PLAYER_NAME) appearing on their highlighted
+       row - doesn't depend on "Leave Squad" being read at all, which a
+       real capture showed can drop from OCR entirely on a longer squad
+       list, even though the name itself read fine in the same pass.
+    2. The "Leave Squad" button, which Wardogs only shows under the squad
+       the player is actually in."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if not lines:
         return None
 
+    anchor_idx = None
+    for i, ln in enumerate(lines):
+        if PLAYER_NAME.upper() in ln.upper():
+            anchor_idx = i
+            break
+    if anchor_idx is None:
+        for i, ln in enumerate(lines):
+            # "SQUAD" occasionally drops from OCR too - "LEAVE" alone is
+            # still unambiguous here since SQUAD_REGION doesn't reach far
+            # enough down to include the separate "Leave Match" button.
+            if "LEAVE" in ln.upper():
+                anchor_idx = i
+                break
+    if anchor_idx is None:
+        return None
+
     header_idx = None
-    for i in range(len(lines) - 1, -1, -1):
+    for i in range(anchor_idx - 1, -1, -1):
         if SQUAD_HEADER_RE.search(lines[i]):
             header_idx = i
             break
@@ -321,13 +366,13 @@ def _squad_header_and_members(text: str):
     name_match = re.search(r"[A-Za-z]{3,}", lines[header_idx])
     if not name_match:
         return None
-    return name_match.group(0).upper(), lines[header_idx + 1:]
+    return name_match.group(0).upper(), _members_between(lines, header_idx)
 
 
 def _squad_members_from_pass(text: str, squad_name: str):
     """Finds `squad_name`'s header anywhere in this OCR pass (regardless of
-    whether this pass has a usable "Leave Squad" anchor) and returns the
-    member lines between it and the next terminator."""
+    whether this pass identifies the squad on its own) and returns the
+    member lines under it."""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     header_idx = None
     for i, ln in enumerate(lines):
@@ -336,25 +381,18 @@ def _squad_members_from_pass(text: str, squad_name: str):
             break
     if header_idx is None:
         return []
-    end_idx = len(lines)
-    for j in range(header_idx + 1, len(lines)):
-        if SQUAD_HEADER_RE.search(lines[j]) or _SQUAD_TERMINATOR_RE.search(lines[j]):
-            end_idx = j
-            break
-    return lines[header_idx + 1:end_idx]
+    return _members_between(lines, header_idx)
 
 
 def parse_squad(*texts: str):
     """Returns (squad_name, [members]) for the player's own squad on the
-    pause menu's //SQUAD panel, or None. Anchored on "LEAVE SQUAD" - the
-    button Wardogs only shows under the squad you're actually in (every
-    other squad shows "Join Squad" or "Locked" instead, confirmed in
-    practice) - then walks backward to that squad's own header line
-    (identified by its bracketed member-count, e.g. "CHARLIE-1|03|").
-    Deliberately doesn't anchor on "CREATE SQUAD"/"//SQUAD" as a starting
-    point - Tesseract's page segmentation reads this panel in a surprising
-    order in practice, often placing the whole squad block BEFORE that
-    header text despite it being visually below.
+    pause menu's //SQUAD panel, or None. See _squad_header_and_members for
+    how "own squad" is identified (player's own name, falling back to the
+    "Leave Squad" button) - deliberately doesn't anchor on "CREATE
+    SQUAD"/"//SQUAD" as a starting point, since Tesseract's page
+    segmentation reads this panel in a surprising order in practice, often
+    placing the whole squad block BEFORE that header text despite it being
+    visually below.
 
     Accepts one or more OCR passes of the same region (e.g. from different
     preprocessing) and reconciles them: some rows are readable in one pass
@@ -362,7 +400,7 @@ def parse_squad(*texts: str):
     has a highlighted background that's consistently unreadable under
     standard grayscale preprocessing but fine under an HSV-based one, while
     the reverse was true for the "Leave Squad" button text itself on the
-    same capture. Only the first pass that actually contains the anchor is
+    same capture. Only the first pass that identifies the squad at all is
     used to confirm the squad name; every pass is then checked for
     additional member lines under that same confirmed header."""
     confirmed = None
@@ -377,12 +415,12 @@ def parse_squad(*texts: str):
     members = []
     for line in primary_lines:
         cleaned = _clean_squad_member(line)
-        if cleaned and cleaned not in members:
+        if cleaned and not _is_near_duplicate_member(cleaned, members):
             members.append(cleaned)
     for text in texts:
         for line in _squad_members_from_pass(text, squad_name):
             cleaned = _clean_squad_member(line)
-            if cleaned and cleaned not in members:
+            if cleaned and not _is_near_duplicate_member(cleaned, members):
                 members.append(cleaned)
 
     if not members:
