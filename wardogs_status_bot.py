@@ -386,6 +386,14 @@ def set_status_message(text: str, message_id: str | None):
 
 
 def capture_and_parse():
+    """Returns (raw_ocr_text, server_status, team). server_status is a
+    server string / NOT_IN_GAME / a Queued string / None (see
+    determine_status). team is sampled independently on every call (not
+    gated on server_status succeeding) - the team icon lives in the
+    regular gameplay HUD and is NOT visible while the pause menu is open
+    (confirmed in practice), i.e. the exact moment server_status usually
+    comes from, so the two can almost never be read together in the same
+    poll. Callers combine the latest known value of each themselves."""
     img = preprocess(grab_region())
     text = pytesseract.image_to_string(img)
     if not text.strip():
@@ -397,23 +405,31 @@ def capture_and_parse():
         # pass found nothing at all.
         text = pytesseract.image_to_string(img, config="--psm 6")
     status = determine_status(text)
+    team = detect_team(grab_region(TEAM_ICON_REGION))
+    return text, status, team
 
-    # Team is only meaningful (and only reliably visible) while actually in
-    # a match - not on the not-in-game / queued states.
-    if status and status != NOT_IN_GAME and not status.startswith("Queued"):
-        team = detect_team(grab_region(TEAM_ICON_REGION))
-        if team:
-            status = f"{team} · {status}"
 
-    return text, status
+def compose_status(server_status, team):
+    """Combines the last known server status with the last known team into
+    the single string that actually gets displayed/compared/persisted.
+    Team is only relevant while genuinely in a match - not shown for
+    NOT_IN_GAME or a Queued status, even if a team happens to be known
+    from a previous match."""
+    if server_status is None or server_status == NOT_IN_GAME or server_status.startswith("Queued"):
+        return server_status
+    if team:
+        return f"{team} · {server_status}"
+    return server_status
 
 
 def run_once():
-    text, status = capture_and_parse()
+    text, status, team = capture_and_parse()
     print("--- raw OCR text ---")
     print(text)
-    print("--- parsed status ---")
+    print("--- parsed server status ---")
     print(status if status else "(no match - see README troubleshooting)")
+    print("--- detected team ---")
+    print(team if team else "(none detected)")
 
 
 def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status=None):
@@ -459,22 +475,41 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
         if on_status:
             on_status(last_status)
 
+    # Server and team are read independently (the team icon isn't visible
+    # while the pause menu is open, confirmed in practice, so they're
+    # almost never both readable in the same poll) and combined into the
+    # candidate status fed through the debounce below.
+    last_known_server_status = None
+    last_known_team = None
+
     while not stop_event.is_set():
         try:
             running = is_game_running()
             if running:
-                _, status = capture_and_parse()
-                if status == pending_status:
+                _, server_status, team = capture_and_parse()
+
+                if server_status is not None:
+                    last_known_server_status = server_status
+                    if server_status == NOT_IN_GAME:
+                        last_known_team = None  # don't carry a stale team into the next match
+                if team is not None:
+                    last_known_team = team
+
+                candidate = compose_status(last_known_server_status, last_known_team)
+
+                if candidate == pending_status:
                     pending_count += 1
                 else:
-                    pending_status = status
+                    pending_status = candidate
                     pending_count = 1
 
-                if status and pending_count >= 2 and status != last_status:
-                    apply(status)
+                if candidate and pending_count >= 2 and candidate != last_status:
+                    apply(candidate)
             else:
                 pending_status = None
                 pending_count = 0
+                last_known_server_status = None
+                last_known_team = None
                 if game_was_running and last_status != NOT_IN_GAME:
                     # Game just closed - this is a certain signal (not a
                     # flaky OCR read), so no need to debounce it.
