@@ -170,6 +170,20 @@ def preprocess(img: Image.Image) -> Image.Image:
     return ImageOps.autocontrast(img)
 
 
+def preprocess_squad(img: Image.Image) -> Image.Image:
+    # The squad panel's highlighted row (the player's own squad entry)
+    # renders as gold text on an olive-gold background - similar hue AND
+    # similar standard luminance (the usual R/G/B-weighted grayscale), so
+    # the player's own name was consistently dropped entirely by OCR while
+    # every plain white-on-black row read fine. The HSV "Value" channel
+    # (just max(R,G,B), not perceptually weighted) keeps much more contrast
+    # for that specific gold-on-gold pairing - confirmed by direct
+    # comparison against a real capture - so squad OCR uses it instead of
+    # the standard preprocess() used everywhere else.
+    v_channel = img.convert("HSV").split()[2]
+    return ImageOps.autocontrast(v_channel)
+
+
 # Reference hues (degrees) for each faction's icon color, from the
 # "SELECT FACTION" screen and a live sample of the in-HUD icon (Lonestar
 # measured at RGB(80,228,255) -> hue ~189). Valkyra/Manticore are educated
@@ -253,24 +267,42 @@ def parse_server(text: str):
     return f"{region} #{num} \u00b7 ID {server_id}"
 
 
-def parse_squad(text: str):
-    """Returns (squad_name, [members]) for the player's own squad on the
-    pause menu's //SQUAD panel, or None. Anchored purely on "LEAVE SQUAD" -
-    the button Wardogs only shows under the squad you're actually in
-    (every other squad shows "Join Squad" or "Locked" instead, confirmed
-    in practice) - then walks backward to that squad's own header line
-    (identified by its bracketed member-count, e.g. "CHARLIE-1|03|").
-    Deliberately doesn't anchor on "CREATE SQUAD"/"//SQUAD" as a starting
-    point - Tesseract's page segmentation reads this panel in a surprising
-    order in practice, often placing the whole squad block BEFORE that
-    header text despite it being visually below."""
+# Terminates a squad's member block: its own header re-appearing (i.e. the
+# next squad down), or any of the three action buttons every squad shows
+# exactly one of.
+_SQUAD_TERMINATOR_RE = re.compile(r"LEAVE|JOIN\s*SQUAD|LOCKED", re.IGNORECASE)
+
+
+def _clean_squad_member(line: str):
+    """Returns a cleaned member name, or None if the line doesn't look
+    like a real entry."""
+    # Strip a small OCR artifact from the squad leader's crown icon (e.g.
+    # "wi " before their name).
+    cleaned = re.sub(r"^[a-z]{1,3}\s+(?=[A-Z\[])", "", line)
+    # Strip trailing OCR noise from a nearby icon (e.g. "NAME x" or
+    # "NAME, |" - a run of lowercase letters/punctuation at the very end;
+    # real names are shown in all caps, so this can't eat into a genuine
+    # one).
+    cleaned = re.sub(r"[a-z,;|\s]+$", "", cleaned)
+    # Reject lines that still don't look like a real entry (e.g. an
+    # isolated icon glyph OCR'd as "7 Bly", seen sitting between the
+    # header and the first real member row) - real entries start with an
+    # uppercase letter or the clan-tag bracket.
+    if cleaned and re.match(r"^[A-Z\[]", cleaned):
+        return cleaned
+    return None
+
+
+def _squad_header_and_members(text: str):
+    """Finds the player's own squad via the "Leave Squad" anchor (see
+    parse_squad) and returns (squad_name, member_lines_from_this_pass), or
+    None if this particular OCR pass doesn't contain that anchor at all."""
     upper = text.upper()
     idx = upper.find("LEAVE SQUAD")
     if idx == -1:
-        # "SQUAD" occasionally drops from OCR even with the tuned config
-        # below - "LEAVE" alone is still unambiguous here since SQUAD_REGION
-        # doesn't reach far enough down to include the separate "Leave
-        # Match" button.
+        # "SQUAD" occasionally drops from OCR - "LEAVE" alone is still
+        # unambiguous here since SQUAD_REGION doesn't reach far enough down
+        # to include the separate "Leave Match" button.
         idx = upper.find("LEAVE")
     if idx == -1:
         return None
@@ -289,24 +321,70 @@ def parse_squad(text: str):
     name_match = re.search(r"[A-Za-z]{3,}", lines[header_idx])
     if not name_match:
         return None
-    squad_name = name_match.group(0).upper()
+    return name_match.group(0).upper(), lines[header_idx + 1:]
+
+
+def _squad_members_from_pass(text: str, squad_name: str):
+    """Finds `squad_name`'s header anywhere in this OCR pass (regardless of
+    whether this pass has a usable "Leave Squad" anchor) and returns the
+    member lines between it and the next terminator."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    header_idx = None
+    for i, ln in enumerate(lines):
+        if SQUAD_HEADER_RE.search(ln) and squad_name in ln.upper():
+            header_idx = i
+            break
+    if header_idx is None:
+        return []
+    end_idx = len(lines)
+    for j in range(header_idx + 1, len(lines)):
+        if SQUAD_HEADER_RE.search(lines[j]) or _SQUAD_TERMINATOR_RE.search(lines[j]):
+            end_idx = j
+            break
+    return lines[header_idx + 1:end_idx]
+
+
+def parse_squad(*texts: str):
+    """Returns (squad_name, [members]) for the player's own squad on the
+    pause menu's //SQUAD panel, or None. Anchored on "LEAVE SQUAD" - the
+    button Wardogs only shows under the squad you're actually in (every
+    other squad shows "Join Squad" or "Locked" instead, confirmed in
+    practice) - then walks backward to that squad's own header line
+    (identified by its bracketed member-count, e.g. "CHARLIE-1|03|").
+    Deliberately doesn't anchor on "CREATE SQUAD"/"//SQUAD" as a starting
+    point - Tesseract's page segmentation reads this panel in a surprising
+    order in practice, often placing the whole squad block BEFORE that
+    header text despite it being visually below.
+
+    Accepts one or more OCR passes of the same region (e.g. from different
+    preprocessing) and reconciles them: some rows are readable in one pass
+    and not another - confirmed in practice, the player's own squad row
+    has a highlighted background that's consistently unreadable under
+    standard grayscale preprocessing but fine under an HSV-based one, while
+    the reverse was true for the "Leave Squad" button text itself on the
+    same capture. Only the first pass that actually contains the anchor is
+    used to confirm the squad name; every pass is then checked for
+    additional member lines under that same confirmed header."""
+    confirmed = None
+    for text in texts:
+        confirmed = _squad_header_and_members(text)
+        if confirmed:
+            break
+    if not confirmed:
+        return None
+    squad_name, primary_lines = confirmed
 
     members = []
-    for line in lines[header_idx + 1:]:
-        # Strip a small OCR artifact from the squad leader's crown icon
-        # (e.g. "wi " before their name).
-        cleaned = re.sub(r"^[a-z]{1,3}\s+(?=[A-Z\[])", "", line)
-        # Strip trailing OCR noise from a nearby icon (e.g. "NAME x" or
-        # "NAME, |" - a run of lowercase letters/punctuation at the very
-        # end; real names are shown in all caps, so this can't eat into a
-        # genuine one).
-        cleaned = re.sub(r"[a-z,;|\s]+$", "", cleaned)
-        # Reject lines that still don't look like a real entry (e.g. an
-        # isolated icon glyph OCR'd as "7 Bly", seen sitting between the
-        # header and the first real member row) - real entries start with
-        # an uppercase letter or the clan-tag bracket.
-        if cleaned and re.match(r"^[A-Z\[]", cleaned):
+    for line in primary_lines:
+        cleaned = _clean_squad_member(line)
+        if cleaned and cleaned not in members:
             members.append(cleaned)
+    for text in texts:
+        for line in _squad_members_from_pass(text, squad_name):
+            cleaned = _clean_squad_member(line)
+            if cleaned and cleaned not in members:
+                members.append(cleaned)
+
     if not members:
         return None
     return squad_name, members
@@ -499,13 +577,17 @@ def capture_and_parse():
     # genuine server reading (unlike team) - so it's fine to gate this
     # extra OCR pass on that, no separate decoupled tracking needed.
     if status and status != NOT_IN_GAME and not status.startswith("Queued"):
-        squad_img = preprocess(grab_region(SQUAD_REGION))
+        squad_raw = grab_region(SQUAD_REGION)
         # --psm 6 (uniform block of text) reads this panel far more
         # reliably than the default full-page-segmentation mode - a direct
         # comparison found the default truncating both member names and
-        # "LEAVE SQUAD" itself, while --psm 6 read both in full.
-        squad_text = pytesseract.image_to_string(squad_img, config="--psm 6")
-        squad = parse_squad(squad_text)
+        # "LEAVE SQUAD" itself, while --psm 6 read both in full. Two
+        # different preprocessing passes are combined (see parse_squad) -
+        # the player's own highlighted squad row needs the HSV-based one
+        # to read at all, but that same pass sometimes drops "LEAVE SQUAD".
+        squad_text_a = pytesseract.image_to_string(preprocess(squad_raw), config="--psm 6")
+        squad_text_b = pytesseract.image_to_string(preprocess_squad(squad_raw), config="--psm 6")
+        squad = parse_squad(squad_text_a, squad_text_b)
         if squad:
             squad_name, members = squad
             member_lines = "\n".join(members)

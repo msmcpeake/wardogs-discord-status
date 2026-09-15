@@ -175,14 +175,18 @@ path (ask me to redo it, or open Task Scheduler -> find
   misreads as the wrong team, tell me and I'll recalibrate
   `TEAM_HUE_DEGREES` / the pixel-count threshold in `detect_team()`.
 - While the pause menu is open (the same moment as a genuine server
-  reading), the status also gains a second line with your current squad
-  and its members, e.g. `Squad CHARLIE: [MILK] MATRIX, GEISTKIN` - see
-  `parse_squad()` and `SQUAD_REGION`. "Your" squad is identified by the
-  "Leave Squad" button, which Wardogs only shows under the squad you're
-  actually in (every other squad shows "Join Squad" or "Locked").
-  Occasional small OCR artifacts on a member name (e.g. a stray trailing
-  character from a nearby icon) are possible - tell me if one keeps
-  showing up and I'll tighten the cleanup.
+  reading), the status also gains a squad section - blank line, "Squad
+  NAME:", then one member per line - see `parse_squad()` and
+  `SQUAD_REGION`. "Your" squad is identified by the "Leave Squad" button,
+  which Wardogs only shows under the squad you're actually in (every other
+  squad shows "Join Squad" or "Locked"). Two OCR passes with different
+  preprocessing are combined (`preprocess()` and the HSV-based
+  `preprocess_squad()`): the player's own row has a highlighted background
+  that's unreadable under standard grayscale but fine under the HSV one,
+  while the reverse was true for the "Leave Squad" text itself on the same
+  real capture - confirmed by directly comparing both against it. Tell me
+  if a member name ever comes through wrong and I'll dig into the specific
+  capture.
 - If Wardogs UI scaling/resolution changes, you may need to re-tune
   `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION`/`SQUAD_REGION`
   too.
