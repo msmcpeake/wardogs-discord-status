@@ -166,7 +166,14 @@ def preprocess(img: Image.Image) -> Image.Image:
 # guesses from their icon colors (red/green) - not yet confirmed against a
 # live sample, since detect_team was built while on the Lonestar team.
 TEAM_HUE_DEGREES = {"Lonestar": 189, "Valkyra": 0, "Manticore": 120}
-TEAM_EMOJIS = {"Lonestar": "\U0001F535", "Valkyra": "\U0001F534", "Manticore": "\U0001F7E2"}
+# Actual faction logos from the official Wardogs Discord (guild
+# 1464219389913071646: "blue"/"red"/"green"), re-uploaded into Milk Cult -
+# bots can only render custom emoji from guilds they're a member of.
+TEAM_EMOJIS = {
+    "Lonestar": "<:blue:1548650924782653561>",
+    "Valkyra": "<:red:1549381696560963677>",
+    "Manticore": "<:green:1549381698234482870>",
+}
 
 
 def detect_team(img: Image.Image):
@@ -345,8 +352,20 @@ def _icon_for(text: str) -> str:
     return STATUS_EMOJI
 
 
+def _strip_team_prefix(text: str) -> str:
+    """The team name still drives which icon _icon_for picks, but isn't
+    shown in the text itself - the color already says which team."""
+    for team in TEAM_EMOJIS:
+        prefix = f"{team} · "
+        if text.startswith(prefix):
+            return text[len(prefix):]
+    return text
+
+
 def _build_embed(text: str):
-    description = text if text == NOT_IN_GAME else f"{_icon_for(text)} │ {text}"
+    icon = _icon_for(text)
+    display_text = _strip_team_prefix(text)
+    description = display_text if display_text == NOT_IN_GAME else f"{icon} │ {display_text}"
     return {
         "title": "Current Wardogs Server",
         "description": description,

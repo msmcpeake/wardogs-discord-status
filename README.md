@@ -159,15 +159,21 @@ path (ask me to redo it, or open Task Scheduler -> find
   X of Y)` instead - see `parse_queue()`. The queue's countdown timer is
   deliberately not included (it ticks every second, which would otherwise
   count as a status "change" on nearly every poll).
-- While actually in a match, the status is prefixed with your faction
-  (Lonestar/Valkyra/Manticore) and its color, e.g. `🔵 │ Lonestar · Central #12
-  · ID 509-791` - detected by sampling the small team icon in the
-  bottom-right HUD corner (color, not OCR text - see `detect_team()` and
-  `TEAM_ICON_REGION`). Only Lonestar (blue) has been confirmed against a
-  live sample so far; Valkyra (red) and Manticore (green) use the colors
-  from the faction-select screen as a best guess - if one ever misreads as
-  the wrong team, tell me and I'll recalibrate `TEAM_HUE_DEGREES` against a
-  real sample.
+- While actually in a match, the icon shown is your faction's actual logo
+  (Lonestar blue / Valkyra red / Manticore green - custom emoji re-uploaded
+  from the official Wardogs Discord, same as the generic fallback icon),
+  e.g. `🔴 │ Central #32 · ID 311496`. The faction name itself isn't
+  repeated in the text - the icon already says which team. Detected by
+  sampling the small team icon in the bottom-right HUD corner (color, not
+  OCR text - see `detect_team()` and `TEAM_ICON_REGION`), independently of
+  the server-info read: the team icon isn't visible while the pause menu
+  is open (confirmed in practice), so `run_loop` tracks the last known
+  server and last known team separately and combines them
+  (`compose_status()`) - a team switch alone (e.g. via "Change Team," with
+  no pause-menu reopen) is enough to trigger an update on its own. All
+  three factions have been confirmed against live samples. If one ever
+  misreads as the wrong team, tell me and I'll recalibrate
+  `TEAM_HUE_DEGREES` / the pixel-count threshold in `detect_team()`.
 - If Wardogs UI scaling/resolution changes, you may need to re-tune
   `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION` too.
 - If you ever see 403 `Missing Access`/`Missing Permissions` errors again
