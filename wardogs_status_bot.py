@@ -181,17 +181,26 @@ def detect_team(img: Image.Image):
     # (saturation * value), so washed-out background pixels barely count
     # and the icon's own color dominates the average.
     sin_sum = cos_sum = weight_sum = 0.0
+    colorful_count = 0
     for r, g, b in pixels:
         h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
         weight = s * v
         if weight < 0.15:  # skip near-black/gray/background pixels
             continue
+        colorful_count += 1
         angle = h * 2 * math.pi
         sin_sum += weight * math.sin(angle)
         cos_sum += weight * math.cos(angle)
         weight_sum += weight
 
-    if weight_sum < len(pixels) * 0.05:  # too few colorful pixels to trust
+    # Require a minimum number of confidently-colored pixels rather than a
+    # percentage of the whole box - icon shapes vary a lot (a blocky square
+    # fills more of the box than a thin chevron), so a fixed count is more
+    # robust across factions than a proportion (a proportion threshold that
+    # worked for Lonestar's filled-square icon wrongly discarded Valkyra's
+    # thinner chevron as "not enough signal" even though its color was
+    # completely unambiguous - seen in practice).
+    if colorful_count < 40 or weight_sum <= 0:
         return None
 
     mean_hue_deg = math.degrees(math.atan2(sin_sum, cos_sum)) % 360
