@@ -218,13 +218,19 @@ def detect_team(img: Image.Image):
 
     # Circular mean of hue, weighted by how "colorful" each pixel is
     # (saturation * value), so washed-out background pixels barely count
-    # and the icon's own color dominates the average.
+    # and the icon's own color dominates the average. Threshold of 0.35 -
+    # a real capture with a bright blue-ish sky visible around the icon
+    # had background pixels topping out around 0.20 (still "colorful"
+    # enough to swamp the old 0.15 threshold and skew the whole average
+    # toward blue, misreading a red Valkyra icon as Lonestar), while the
+    # icon's own pixels measured 0.41-0.68 on the same capture - a wide,
+    # safe margin above 0.35.
     sin_sum = cos_sum = weight_sum = 0.0
     colorful_count = 0
     for r, g, b in pixels:
         h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
         weight = s * v
-        if weight < 0.15:  # skip near-black/gray/background pixels
+        if weight < 0.35:  # skip near-black/gray/background pixels
             continue
         colorful_count += 1
         angle = h * 2 * math.pi
