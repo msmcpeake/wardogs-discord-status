@@ -264,7 +264,14 @@ def parse_squad(text: str):
     point - Tesseract's page segmentation reads this panel in a surprising
     order in practice, often placing the whole squad block BEFORE that
     header text despite it being visually below."""
-    idx = text.upper().find("LEAVE SQUAD")
+    upper = text.upper()
+    idx = upper.find("LEAVE SQUAD")
+    if idx == -1:
+        # "SQUAD" occasionally drops from OCR even with the tuned config
+        # below - "LEAVE" alone is still unambiguous here since SQUAD_REGION
+        # doesn't reach far enough down to include the separate "Leave
+        # Match" button.
+        idx = upper.find("LEAVE")
     if idx == -1:
         return None
     lines = [ln.strip() for ln in text[:idx].splitlines() if ln.strip()]
@@ -289,7 +296,16 @@ def parse_squad(text: str):
         # Strip a small OCR artifact from the squad leader's crown icon
         # (e.g. "wi " before their name).
         cleaned = re.sub(r"^[a-z]{1,3}\s+(?=[A-Z\[])", "", line)
-        if cleaned:
+        # Strip trailing OCR noise from a nearby icon (e.g. "NAME x" or
+        # "NAME, |" - a run of lowercase letters/punctuation at the very
+        # end; real names are shown in all caps, so this can't eat into a
+        # genuine one).
+        cleaned = re.sub(r"[a-z,;|\s]+$", "", cleaned)
+        # Reject lines that still don't look like a real entry (e.g. an
+        # isolated icon glyph OCR'd as "7 Bly", seen sitting between the
+        # header and the first real member row) - real entries start with
+        # an uppercase letter or the clan-tag bracket.
+        if cleaned and re.match(r"^[A-Z\[]", cleaned):
             members.append(cleaned)
     if not members:
         return None
@@ -484,7 +500,11 @@ def capture_and_parse():
     # extra OCR pass on that, no separate decoupled tracking needed.
     if status and status != NOT_IN_GAME and not status.startswith("Queued"):
         squad_img = preprocess(grab_region(SQUAD_REGION))
-        squad_text = pytesseract.image_to_string(squad_img)
+        # --psm 6 (uniform block of text) reads this panel far more
+        # reliably than the default full-page-segmentation mode - a direct
+        # comparison found the default truncating both member names and
+        # "LEAVE SQUAD" itself, while --psm 6 read both in full.
+        squad_text = pytesseract.image_to_string(squad_img, config="--psm 6")
         squad = parse_squad(squad_text)
         if squad:
             squad_name, members = squad
