@@ -83,6 +83,11 @@ CAPTURE_REGION = os.getenv("CAPTURE_REGION", "0,0.65,1.0,1.0")
 # --once while in a match and check the "team" line it prints).
 TEAM_ICON_REGION = os.getenv("TEAM_ICON_REGION", "0.960,0.925,0.990,0.965")
 
+# Squad panel on the pause menu (the //SQUAD list of Alpha/Bravo/Charlie
+# etc squads). Only read while the pause menu is confirmed open (same
+# moment as CURRENT SERVER/SERVER ID), unlike the team icon.
+SQUAD_REGION = os.getenv("SQUAD_REGION", "0.68,0.04,1.0,0.75")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -121,6 +126,11 @@ SERVER_BROWSER_RE = re.compile(r"SERVER\s*BROWSER", re.IGNORECASE)
 # can't accidentally match one of the many other server entries listed
 # above it on the same screen.
 QUEUE_RE = re.compile(r"SERVER\s*QUEUE.*?POSITION\s*(\d+)\s*OF\s*(\d+)(.*)", re.IGNORECASE | re.DOTALL)
+# A squad header's bracketed member-count, e.g. "CHARLIE-1|03|" (the pipe
+# is how OCR often reads the actual "[" bracket) - distinguishes a squad
+# name/header line from a plain member-name line, which won't coincidentally
+# contain a bracketed number.
+SQUAD_HEADER_RE = re.compile(r"[\[(|]\s*\d+\s*[\])|]")
 
 NOT_IN_GAME = "Matrix is not in a game"
 
@@ -241,6 +251,49 @@ def parse_server(text: str):
     server_id = re.sub(r"\s*-\s*", "-", fixed)
 
     return f"{region} #{num} \u00b7 ID {server_id}"
+
+
+def parse_squad(text: str):
+    """Returns (squad_name, [members]) for the player's own squad on the
+    pause menu's //SQUAD panel, or None. Anchored purely on "LEAVE SQUAD" -
+    the button Wardogs only shows under the squad you're actually in
+    (every other squad shows "Join Squad" or "Locked" instead, confirmed
+    in practice) - then walks backward to that squad's own header line
+    (identified by its bracketed member-count, e.g. "CHARLIE-1|03|").
+    Deliberately doesn't anchor on "CREATE SQUAD"/"//SQUAD" as a starting
+    point - Tesseract's page segmentation reads this panel in a surprising
+    order in practice, often placing the whole squad block BEFORE that
+    header text despite it being visually below."""
+    idx = text.upper().find("LEAVE SQUAD")
+    if idx == -1:
+        return None
+    lines = [ln.strip() for ln in text[:idx].splitlines() if ln.strip()]
+    if not lines:
+        return None
+
+    header_idx = None
+    for i in range(len(lines) - 1, -1, -1):
+        if SQUAD_HEADER_RE.search(lines[i]):
+            header_idx = i
+            break
+    if header_idx is None:
+        return None
+
+    name_match = re.search(r"[A-Za-z]{3,}", lines[header_idx])
+    if not name_match:
+        return None
+    squad_name = name_match.group(0).upper()
+
+    members = []
+    for line in lines[header_idx + 1:]:
+        # Strip a small OCR artifact from the squad leader's crown icon
+        # (e.g. "wi " before their name).
+        cleaned = re.sub(r"^[a-z]{1,3}\s+(?=[A-Z\[])", "", line)
+        if cleaned:
+            members.append(cleaned)
+    if not members:
+        return None
+    return squad_name, members
 
 
 def parse_queue(text: str):
@@ -425,6 +478,18 @@ def capture_and_parse():
         text = pytesseract.image_to_string(img, config="--psm 6")
     status = determine_status(text)
     team = detect_team(grab_region(TEAM_ICON_REGION))
+
+    # Squad is only visible on the pause menu, the same moment as a
+    # genuine server reading (unlike team) - so it's fine to gate this
+    # extra OCR pass on that, no separate decoupled tracking needed.
+    if status and status != NOT_IN_GAME and not status.startswith("Queued"):
+        squad_img = preprocess(grab_region(SQUAD_REGION))
+        squad_text = pytesseract.image_to_string(squad_img)
+        squad = parse_squad(squad_text)
+        if squad:
+            squad_name, members = squad
+            status = f"{status}\nSquad {squad_name}: {', '.join(members)}"
+
     return text, status, team
 
 

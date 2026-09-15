@@ -174,8 +174,18 @@ path (ask me to redo it, or open Task Scheduler -> find
   three factions have been confirmed against live samples. If one ever
   misreads as the wrong team, tell me and I'll recalibrate
   `TEAM_HUE_DEGREES` / the pixel-count threshold in `detect_team()`.
+- While the pause menu is open (the same moment as a genuine server
+  reading), the status also gains a second line with your current squad
+  and its members, e.g. `Squad CHARLIE: [MILK] MATRIX, GEISTKIN` - see
+  `parse_squad()` and `SQUAD_REGION`. "Your" squad is identified by the
+  "Leave Squad" button, which Wardogs only shows under the squad you're
+  actually in (every other squad shows "Join Squad" or "Locked").
+  Occasional small OCR artifacts on a member name (e.g. a stray trailing
+  character from a nearby icon) are possible - tell me if one keeps
+  showing up and I'll tighten the cleanup.
 - If Wardogs UI scaling/resolution changes, you may need to re-tune
-  `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION` too.
+  `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION`/`SQUAD_REGION`
+  too.
 - If you ever see 403 `Missing Access`/`Missing Permissions` errors again
   after changing channel permissions, it likely means a permission the bot
   needs got removed from its explicit per-member overwrite in step 2 -
