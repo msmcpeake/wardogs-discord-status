@@ -26,7 +26,9 @@ Usage:
 """
 
 import argparse
+import colorsys
 import json
+import math
 import logging
 import os
 import re
@@ -73,6 +75,13 @@ HEARTBEAT_INTERVAL_SECONDS = float(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300"
 # Smaller region = less for Tesseract to process = faster polling, so widen
 # this only as far as you actually need to if something isn't being found.
 CAPTURE_REGION = os.getenv("CAPTURE_REGION", "0,0.65,1.0,1.0")
+
+# Small box (screen fractions, independent of CAPTURE_REGION) around the
+# team-faction icon in the bottom-right HUD corner, visible during actual
+# gameplay (pause menu open or closed). Measured directly off a live 4K
+# capture - may need retuning on other resolutions/UI scales (test with
+# --once while in a match and check the "team" line it prints).
+TEAM_ICON_REGION = os.getenv("TEAM_ICON_REGION", "0.960,0.925,0.990,0.965")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -125,8 +134,8 @@ def is_game_running() -> bool:
     return False
 
 
-def grab_region() -> Image.Image:
-    left_f, top_f, right_f, bottom_f = (float(x) for x in CAPTURE_REGION.split(","))
+def grab_region(region_str: str = CAPTURE_REGION) -> Image.Image:
+    left_f, top_f, right_f, bottom_f = (float(x) for x in region_str.split(","))
     with mss.MSS() as sct:
         mon = sct.monitors[1]
         w, h = mon["width"], mon["height"]
@@ -149,6 +158,49 @@ def preprocess(img: Image.Image) -> Image.Image:
     # a lower-resolution display.
     img = img.convert("L")
     return ImageOps.autocontrast(img)
+
+
+# Reference hues (degrees) for each faction's icon color, from the
+# "SELECT FACTION" screen and a live sample of the in-HUD icon (Lonestar
+# measured at RGB(80,228,255) -> hue ~189). Valkyra/Manticore are educated
+# guesses from their icon colors (red/green) - not yet confirmed against a
+# live sample, since detect_team was built while on the Lonestar team.
+TEAM_HUE_DEGREES = {"Lonestar": 189, "Valkyra": 0, "Manticore": 120}
+TEAM_EMOJIS = {"Lonestar": "\U0001F535", "Valkyra": "\U0001F534", "Manticore": "\U0001F7E2"}
+
+
+def detect_team(img: Image.Image):
+    """Samples the small team-faction icon in the bottom-right HUD corner
+    and classifies its color. Returns "Lonestar"/"Valkyra"/"Manticore", or
+    None if no confidently-colored icon is found there (HUD not showing,
+    icon occluded, wrong region for this resolution, etc)."""
+    rgb_img = img.convert("RGB")
+    pixels = list(rgb_img.getdata())
+
+    # Circular mean of hue, weighted by how "colorful" each pixel is
+    # (saturation * value), so washed-out background pixels barely count
+    # and the icon's own color dominates the average.
+    sin_sum = cos_sum = weight_sum = 0.0
+    for r, g, b in pixels:
+        h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+        weight = s * v
+        if weight < 0.15:  # skip near-black/gray/background pixels
+            continue
+        angle = h * 2 * math.pi
+        sin_sum += weight * math.sin(angle)
+        cos_sum += weight * math.cos(angle)
+        weight_sum += weight
+
+    if weight_sum < len(pixels) * 0.05:  # too few colorful pixels to trust
+        return None
+
+    mean_hue_deg = math.degrees(math.atan2(sin_sum, cos_sum)) % 360
+
+    def circular_distance(a, b):
+        d = abs(a - b) % 360
+        return min(d, 360 - d)
+
+    return min(TEAM_HUE_DEGREES, key=lambda team: circular_distance(mean_hue_deg, TEAM_HUE_DEGREES[team]))
 
 
 def parse_server(text: str):
@@ -277,8 +329,15 @@ def _round_down_to_5_minutes(dt: datetime) -> datetime:
     return dt - discard
 
 
+def _icon_for(text: str) -> str:
+    for team, emoji in TEAM_EMOJIS.items():
+        if text.startswith(f"{team} · "):
+            return emoji
+    return STATUS_EMOJI
+
+
 def _build_embed(text: str):
-    description = text if text == NOT_IN_GAME else f"{STATUS_EMOJI} │ {text}"
+    description = text if text == NOT_IN_GAME else f"{_icon_for(text)} │ {text}"
     return {
         "title": "Current Wardogs Server",
         "description": description,
@@ -328,7 +387,16 @@ def capture_and_parse():
         # there, so it's only worth paying for as a fallback when the fast
         # pass found nothing at all.
         text = pytesseract.image_to_string(img, config="--psm 6")
-    return text, determine_status(text)
+    status = determine_status(text)
+
+    # Team is only meaningful (and only reliably visible) while actually in
+    # a match - not on the not-in-game / queued states.
+    if status and status != NOT_IN_GAME and not status.startswith("Queued"):
+        team = detect_team(grab_region(TEAM_ICON_REGION))
+        if team:
+            status = f"{team} · {status}"
+
+    return text, status
 
 
 def run_once():

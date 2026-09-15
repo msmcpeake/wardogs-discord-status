@@ -159,8 +159,17 @@ path (ask me to redo it, or open Task Scheduler -> find
   X of Y)` instead - see `parse_queue()`. The queue's countdown timer is
   deliberately not included (it ticks every second, which would otherwise
   count as a status "change" on nearly every poll).
+- While actually in a match, the status is prefixed with your faction
+  (Lonestar/Valkyra/Manticore) and its color, e.g. `🔵 │ Lonestar · Central #12
+  · ID 509-791` - detected by sampling the small team icon in the
+  bottom-right HUD corner (color, not OCR text - see `detect_team()` and
+  `TEAM_ICON_REGION`). Only Lonestar (blue) has been confirmed against a
+  live sample so far; Valkyra (red) and Manticore (green) use the colors
+  from the faction-select screen as a best guess - if one ever misreads as
+  the wrong team, tell me and I'll recalibrate `TEAM_HUE_DEGREES` against a
+  real sample.
 - If Wardogs UI scaling/resolution changes, you may need to re-tune
-  `CAPTURE_REGION` (step 4).
+  `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION` too.
 - If you ever see 403 `Missing Access`/`Missing Permissions` errors again
   after changing channel permissions, it likely means a permission the bot
   needs got removed from its explicit per-member overwrite in step 2 -
