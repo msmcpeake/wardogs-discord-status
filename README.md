@@ -73,10 +73,29 @@ push a commit that includes it. If it's already been committed, the fix is
 more involved than just deleting it (it stays in git history) - regenerate
 the token immediately and ask for help removing it from history.
 
-## 4. Tune the capture region (do this once, without touching Discord)
+## 4. Tune the capture regions (do this once, without touching Discord)
 
-Launch Wardogs, join a match, hit **Esc** so the panel with `CURRENT SERVER`
-/ `SERVER ID` is on screen, then in another window run:
+**See them first.** The script reads two boxes off your screen -
+`CAPTURE_REGION` (the OCR crop) and `TEAM_ICON_REGION` (the faction icon) -
+as fractions of one monitor. Run:
+
+```bash
+python region_preview.py
+```
+
+(or right-click the tray icon -> **Show capture regions...**) to see a
+screenshot of your monitor with both boxes drawn on it and their real pixel
+sizes listed underneath. Use **Capture in 5s** to switch into the game
+first and grab a frame with the pause menu or HUD up, so you can check the
+boxes actually cover what they need to. The monitor dropdown shows every
+display's number and resolution - if Wardogs isn't on your primary display,
+set `MONITOR_INDEX` in `.env` to that number. The preview is read-only: edit
+`.env`, hit **Refresh** to preview the new boxes, then restart the app
+(tray icon -> Quit, relaunch) to apply them.
+
+**Then confirm with OCR.** Launch Wardogs, join a match, hit **Esc** so the
+panel with `CURRENT SERVER` / `SERVER ID` is on screen, then in another
+window run:
 
 ```bash
 python wardogs_status_bot.py --once
@@ -175,7 +194,8 @@ path (ask me to redo it, or open Task Scheduler -> find
   misreads as the wrong team, tell me and I'll recalibrate
   `TEAM_HUE_DEGREES` / the pixel-count threshold in `detect_team()`.
 - If Wardogs UI scaling/resolution changes, you may need to re-tune
-  `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION` too.
+  `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION` too - the
+  preview from step 4 is the quickest way to see what needs to move.
 - If you ever see 403 `Missing Access`/`Missing Permissions` errors again
   after changing channel permissions, it likely means a permission the bot
   needs got removed from its explicit per-member overwrite in step 2 -

@@ -32,6 +32,7 @@ import math
 import logging
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -74,14 +75,24 @@ HEARTBEAT_INTERVAL_SECONDS = float(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300"
 # BROWSER button on the main menu - all measured to sit within this band.
 # Smaller region = less for Tesseract to process = faster polling, so widen
 # this only as far as you actually need to if something isn't being found.
-CAPTURE_REGION = os.getenv("CAPTURE_REGION", "0,0.65,1.0,1.0")
+# (Run region_preview.py, or use the tray icon's "Show capture regions...",
+# to see these drawn over a real screenshot.)
+DEFAULT_CAPTURE_REGION = "0,0.65,1.0,1.0"
+CAPTURE_REGION = os.getenv("CAPTURE_REGION", DEFAULT_CAPTURE_REGION)
 
 # Small box (screen fractions, independent of CAPTURE_REGION) around the
 # team-faction icon in the bottom-right HUD corner, visible during actual
 # gameplay (pause menu open or closed). Measured directly off a live 4K
 # capture - may need retuning on other resolutions/UI scales (test with
 # --once while in a match and check the "team" line it prints).
-TEAM_ICON_REGION = os.getenv("TEAM_ICON_REGION", "0.960,0.925,0.990,0.965")
+DEFAULT_TEAM_ICON_REGION = "0.960,0.925,0.990,0.965"
+TEAM_ICON_REGION = os.getenv("TEAM_ICON_REGION", DEFAULT_TEAM_ICON_REGION)
+
+# Which monitor Wardogs runs on, as mss numbers them: 1 is the primary
+# display, 2+ are the others (region_preview.py lists them with their
+# resolutions). Region fractions above are relative to this monitor.
+DEFAULT_MONITOR_INDEX = 1
+MONITOR_INDEX = int(os.getenv("MONITOR_INDEX", str(DEFAULT_MONITOR_INDEX)))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -134,10 +145,35 @@ def is_game_running() -> bool:
     return False
 
 
+def parse_region(region_str: str):
+    """Parses "left,top,right,bottom" (0-1 screen fractions). Raises
+    ValueError with a readable message if it's malformed or nonsensical."""
+    try:
+        left, top, right, bottom = (float(x) for x in region_str.split(","))
+    except ValueError:
+        raise ValueError(f'"{region_str}" isn\'t four comma-separated numbers (left,top,right,bottom)')
+    if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
+        raise ValueError(f'"{region_str}" needs 0 <= left < right <= 1 and 0 <= top < bottom <= 1')
+    return left, top, right, bottom
+
+
+_warned_bad_monitor = False
+
+
 def grab_region(region_str: str = CAPTURE_REGION) -> Image.Image:
-    left_f, top_f, right_f, bottom_f = (float(x) for x in region_str.split(","))
+    global _warned_bad_monitor
+    left_f, top_f, right_f, bottom_f = parse_region(region_str)
     with mss.MSS() as sct:
-        mon = sct.monitors[1]
+        index = MONITOR_INDEX
+        if not 1 <= index < len(sct.monitors):
+            if not _warned_bad_monitor:
+                log.warning(
+                    "MONITOR_INDEX=%d doesn't exist (this machine has monitors 1-%d) - falling back to monitor 1.",
+                    index, len(sct.monitors) - 1,
+                )
+                _warned_bad_monitor = True
+            index = 1
+        mon = sct.monitors[index]
         w, h = mon["width"], mon["height"]
         box = {
             "left": mon["left"] + int(w * left_f),
@@ -569,6 +605,16 @@ def run_tray(dry_run: bool):
         stop_event.set()
         icon.stop()
 
+    def on_show_regions(_icon, _item):
+        # Separate process rather than a thread: Tk wants to own its thread's
+        # event loop, and pystray already owns the main one.
+        proc = icon_ref.get("preview_proc")
+        if proc is not None and proc.poll() is None:
+            return  # already open
+        icon_ref["preview_proc"] = subprocess.Popen(
+            [sys.executable, os.path.join(SCRIPT_DIR, "region_preview.py")], cwd=SCRIPT_DIR
+        )
+
     def setup(icon):
         # pystray only pushes title updates to the OS once icon.visible is
         # True, and (per its docs) a custom setup callback like this one is
@@ -583,7 +629,10 @@ def run_tray(dry_run: bool):
         icon_ref["thread"] = thread
 
     image = Image.open(TRAY_ICON_FILE)
-    menu = pystray.Menu(pystray.MenuItem("Quit", on_quit))
+    menu = pystray.Menu(
+        pystray.MenuItem("Show capture regions...", on_show_regions),
+        pystray.MenuItem("Quit", on_quit),
+    )
     icon = pystray.Icon("wardogs_status", image, "Wardogs Status: starting...", menu)
     icon_ref["icon"] = icon
 
