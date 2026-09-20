@@ -4,7 +4,7 @@ on top, so you can check they line up with the game's UI on your resolution.
     python region_preview.py
 
 Also reachable from the tray icon's "Show capture regions..." menu item.
-Read-only: edit CAPTURE_REGION / TEAM_ICON_REGION / MONITOR_INDEX in .env,
+Read-only: edit CAPTURE_REGION / TEAM_ICON_REGION / SCORE_REGION / MONITOR_INDEX in .env,
 hit Refresh here to see the new boxes, then restart the app to apply them.
 """
 
@@ -24,6 +24,7 @@ ENV_PATH = os.path.join(bot.SCRIPT_DIR, ".env")
 REGION_SPECS = [
     ("CAPTURE_REGION", "OCR capture region", "#ffd000", bot.DEFAULT_CAPTURE_REGION),
     ("TEAM_ICON_REGION", "Team icon region", "#ff3b3b", bot.DEFAULT_TEAM_ICON_REGION),
+    ("SCORE_REGION", "Scoreboard region", "#3bd1ff", bot.DEFAULT_SCORE_REGION),
 ]
 
 

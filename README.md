@@ -76,8 +76,8 @@ the token immediately and ask for help removing it from history.
 ## 4. Tune the capture regions (do this once, without touching Discord)
 
 **See them first.** The script reads two boxes off your screen -
-`CAPTURE_REGION` (the OCR crop) and `TEAM_ICON_REGION` (the faction icon) -
-as fractions of one monitor. Run:
+`CAPTURE_REGION` (the OCR crop), `TEAM_ICON_REGION` (the faction icon), and
+`SCORE_REGION` (the scoreboard) - as fractions of one monitor. Run:
 
 ```bash
 python region_preview.py
@@ -193,8 +193,20 @@ path (ask me to redo it, or open Task Scheduler -> find
   three factions have been confirmed against live samples. If one ever
   misreads as the wrong team, tell me and I'll recalibrate
   `TEAM_HUE_DEGREES` / the pixel-count threshold in `detect_team()`.
+- While in a match, the three team scores from the bottom-left scoreboard
+  are shown under the server line (`Score: 🔵 5 – 🔴 13 – 🟢 95`, same
+  blue-red-green order as the game, leading zeros dropped). Only the three
+  large 3-digit numbers are read - not the team-size numbers beside the
+  person icons. See `read_scores()` / `SCORE_REGION`: each of the three
+  panels must OCR as exactly three digits or the whole read is discarded
+  (so menus/map screens can't produce phantom scores), and a score must be
+  read identically twice in a row before it's used. If the HUD is covered
+  (full-screen map, etc.) the last confirmed scores stay up. Since scores
+  tick up constantly, a score-only change is sent to Discord at most every
+  `SCORE_UPDATE_INTERVAL_SECONDS` (default 30); server/team changes are
+  never delayed. Scores reset when you change servers or leave the match.
 - If Wardogs UI scaling/resolution changes, you may need to re-tune
-  `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION` too - the
+  `CAPTURE_REGION` (step 4) and possibly `TEAM_ICON_REGION` / `SCORE_REGION` too - the
   preview from step 4 is the quickest way to see what needs to move.
 - If you ever see 403 `Missing Access`/`Missing Permissions` errors again
   after changing channel permissions, it likely means a permission the bot

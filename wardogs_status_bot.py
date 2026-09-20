@@ -88,6 +88,17 @@ CAPTURE_REGION = os.getenv("CAPTURE_REGION", DEFAULT_CAPTURE_REGION)
 DEFAULT_TEAM_ICON_REGION = "0.960,0.925,0.990,0.965"
 TEAM_ICON_REGION = os.getenv("TEAM_ICON_REGION", DEFAULT_TEAM_ICON_REGION)
 
+# The row of three big 3-digit team scores in the bottom-left HUD (blue /
+# red / green, always in that order). Covers the whole scoreboard row - the
+# three team panels are equal thirds of it - and read_scores() then reads
+# only the large digits at the left of each third, ignoring the person icon
+# and team-size number on the right. Measured off a live 4K capture.
+DEFAULT_SCORE_REGION = "0.0169,0.9139,0.1497,0.9514"
+SCORE_REGION = os.getenv("SCORE_REGION", DEFAULT_SCORE_REGION)
+# Scores tick up constantly during a match, so score-only changes are pushed
+# to Discord at most this often (a new server/team change is never delayed).
+SCORE_UPDATE_INTERVAL_SECONDS = float(os.getenv("SCORE_UPDATE_INTERVAL_SECONDS", "30"))
+
 # Which monitor Wardogs runs on, as mss numbers them: 1 is the primary
 # display, 2+ are the others (region_preview.py lists them with their
 # resolutions). Region fractions above are relative to this monitor.
@@ -261,6 +272,35 @@ def detect_team(img: Image.Image):
     return min(TEAM_HUE_DEGREES, key=lambda team: circular_distance(mean_hue_deg, TEAM_HUE_DEGREES[team]))
 
 
+SCORE_TEAMS = ("Lonestar", "Valkyra", "Manticore")  # left-to-right order on the scoreboard (blue, red, green)
+# Share of each team panel (from its left edge) that holds the big digits;
+# the rest is the person icon + team-size number, which must not be read.
+SCORE_DIGITS_WIDTH_FRACTION = 0.74
+SCORE_DIGITS_MIN_HEIGHT_PX = 60  # upscale smaller crops (lower-res displays) up to about this tall
+
+
+def read_scores(img: Image.Image):
+    """Reads the three big team scores from a SCORE_REGION capture. Returns
+    (lonestar, valkyra, manticore) as ints, or None unless all three panels
+    read as exactly three digits (the HUD always shows 001/000/095-style
+    padded numbers) - that strictness is what keeps a non-HUD screen (menus,
+    loading) from producing phantom scores."""
+    third = img.width / 3
+    scores = []
+    for i in range(3):
+        left = round(i * third)
+        cell = img.crop((left, 0, left + round(third * SCORE_DIGITS_WIDTH_FRACTION), img.height))
+        if cell.height < SCORE_DIGITS_MIN_HEIGHT_PX:
+            factor = -(-SCORE_DIGITS_MIN_HEIGHT_PX // cell.height)  # ceil
+            cell = cell.resize((cell.width * factor, cell.height * factor), Image.LANCZOS)
+        cell = ImageOps.autocontrast(cell.convert("L"))
+        text = pytesseract.image_to_string(cell, config="--psm 7 -c tessedit_char_whitelist=0123456789").strip()
+        if not re.fullmatch(r"\d{3}", text):
+            return None
+        scores.append(int(text))  # int() drops the leading zeros
+    return tuple(scores)
+
+
 def parse_server(text: str):
     """Returns the formatted status, or None if the OCR text doesn't contain
     a complete reading (region, number, AND server id). Requiring all three
@@ -404,10 +444,18 @@ def _strip_team_prefix(text: str) -> str:
     return text
 
 
-def _build_embed(text: str):
+def _format_scores(scores) -> str:
+    """Mirrors the game's own 'blue - red - green' scoreboard order, with the
+    faction icons standing in for the colors."""
+    return " – ".join(f"{TEAM_EMOJIS[team]} {score}" for team, score in zip(SCORE_TEAMS, scores))
+
+
+def _build_embed(text: str, scores=None):
     icon = _icon_for(text)
     display_text = _strip_team_prefix(text)
     description = display_text if display_text == NOT_IN_GAME else f"{icon} │ {display_text}"
+    if scores:
+        description += f"\n\nScore: {_format_scores(scores)}"
     return {
         "title": "Current Wardogs Server",
         "description": description,
@@ -417,7 +465,7 @@ def _build_embed(text: str):
     }
 
 
-def set_status_message(text: str, message_id: str | None):
+def set_status_message(text: str, message_id: str | None, scores=None):
     """Creates the status message on first use, then edits it in place on
     every later call. Returns (success, retry_after_seconds_or_None,
     message_id). Never blocks on rate limits itself - the caller decides
@@ -425,7 +473,7 @@ def set_status_message(text: str, message_id: str | None):
     headers = _discord_headers()
     # content is explicitly cleared so editing an older plain-text message
     # (from before embeds were added) doesn't leave stale text above the embed.
-    body = {"content": "", "embeds": [_build_embed(text)]}
+    body = {"content": "", "embeds": [_build_embed(text, scores)]}
 
     if message_id:
         url = f"https://discord.com/api/v10/channels/{DISCORD_STATUS_CHANNEL_ID}/messages/{message_id}"
@@ -440,21 +488,23 @@ def set_status_message(text: str, message_id: str | None):
         return False, retry_after, message_id
     if resp.ok:
         new_id = resp.json()["id"]
-        log.info("Status message %s to: %s", "updated" if message_id else "created", text)
+        log.info("Status message %s to: %s%s", "updated" if message_id else "created", text, f" | scores {scores}" if scores else "")
         return True, None, new_id
     log.error("Failed to update status message (%s): %s", resp.status_code, resp.text)
     return False, None, message_id
 
 
 def capture_and_parse():
-    """Returns (raw_ocr_text, server_status, team). server_status is a
+    """Returns (raw_ocr_text, server_status, team, scores). server_status is a
     server string / NOT_IN_GAME / a Queued string / None (see
     determine_status). team is sampled independently on every call (not
     gated on server_status succeeding) - the team icon lives in the
     regular gameplay HUD and is NOT visible while the pause menu is open
     (confirmed in practice), i.e. the exact moment server_status usually
     comes from, so the two can almost never be read together in the same
-    poll. Callers combine the latest known value of each themselves."""
+    poll. Callers combine the latest known value of each themselves.
+    scores is the (lonestar, valkyra, manticore) HUD scoreboard tuple, or
+    None if it isn't readable right now."""
     img = preprocess(grab_region())
     text = pytesseract.image_to_string(img)
     if not text.strip():
@@ -467,7 +517,14 @@ def capture_and_parse():
         text = pytesseract.image_to_string(img, config="--psm 6")
     status = determine_status(text)
     team = detect_team(grab_region(TEAM_ICON_REGION))
-    return text, status, team
+    scores = read_scores(grab_region(SCORE_REGION))
+    return text, status, team, scores
+
+
+def is_in_match(status) -> bool:
+    """True for a real server status (not None / not-in-game / queued) - the
+    only time a team or score is meaningful."""
+    return status is not None and status != NOT_IN_GAME and not status.startswith("Queued")
 
 
 def compose_status(server_status, team):
@@ -476,7 +533,7 @@ def compose_status(server_status, team):
     Team is only relevant while genuinely in a match - not shown for
     NOT_IN_GAME or a Queued status, even if a team happens to be known
     from a previous match."""
-    if server_status is None or server_status == NOT_IN_GAME or server_status.startswith("Queued"):
+    if not is_in_match(server_status):
         return server_status
     if team:
         return f"{team} · {server_status}"
@@ -484,13 +541,15 @@ def compose_status(server_status, team):
 
 
 def run_once():
-    text, status, team = capture_and_parse()
+    text, status, team, scores = capture_and_parse()
     print("--- raw OCR text ---")
     print(text)
     print("--- parsed server status ---")
     print(status if status else "(no match - see README troubleshooting)")
     print("--- detected team ---")
     print(team if team else "(none detected)")
+    print("--- scores (blue - red - green) ---")
+    print(" - ".join(str(x) for x in scores) if scores else "(scoreboard not readable)")
 
 
 def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status=None):
@@ -516,14 +575,15 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
     game_was_running = False
 
     def apply(status):
-        nonlocal last_status, message_id, cooldown_until, last_applied_at
+        nonlocal last_status, message_id, cooldown_until, last_applied_at, last_applied_scores
         if time.time() < cooldown_until:
             return  # still cooling down from a rate limit, try again later
+        scores = last_known_scores if is_in_match(status) else None
         if dry_run:
-            log.info("[dry-run] would set status message to: %s", status)
+            log.info("[dry-run] would set status message to: %s (scores %s)", status, scores)
             last_status = status
         else:
-            ok, retry_after, message_id = set_status_message(status, message_id)
+            ok, retry_after, message_id = set_status_message(status, message_id, scores)
             if ok:
                 last_status = status
                 save_state(status, message_id)
@@ -533,6 +593,7 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
             else:
                 return
         last_applied_at = time.time()
+        last_applied_scores = scores
         if on_status:
             on_status(last_status)
 
@@ -542,19 +603,39 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
     # candidate status fed through the debounce below.
     last_known_server_status = None
     last_known_team = None
+    # Scores are debounced like everything else (2 identical reads in a row)
+    # and kept separately: unreadable polls (e.g. HUD hidden by a menu) leave
+    # the last confirmed scores alone rather than blanking them.
+    last_known_scores = None
+    pending_scores = None
+    pending_scores_count = 0
+    last_applied_scores = None
 
     while not stop_event.is_set():
         try:
             running = is_game_running()
             if running:
-                _, server_status, team = capture_and_parse()
+                _, server_status, team, scores = capture_and_parse()
 
                 if server_status is not None:
+                    if server_status != last_known_server_status:
+                        # New server / left the match: last match's scores are stale.
+                        last_known_scores = None
+                        pending_scores = None
+                        pending_scores_count = 0
                     last_known_server_status = server_status
                     if server_status == NOT_IN_GAME:
                         last_known_team = None  # don't carry a stale team into the next match
                 if team is not None:
                     last_known_team = team
+                if scores is not None:
+                    if scores == pending_scores:
+                        pending_scores_count += 1
+                    else:
+                        pending_scores = scores
+                        pending_scores_count = 1
+                    if pending_scores_count >= 2:
+                        last_known_scores = scores
 
                 candidate = compose_status(last_known_server_status, last_known_team)
 
@@ -566,11 +647,21 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
 
                 if candidate and pending_count >= 2 and candidate != last_status:
                     apply(candidate)
+                elif (
+                    is_in_match(last_status)
+                    and last_known_scores != last_applied_scores
+                    and time.time() - last_applied_at >= SCORE_UPDATE_INTERVAL_SECONDS
+                ):
+                    # Score-only change: throttled, since scores tick up constantly.
+                    apply(last_status)
             else:
                 pending_status = None
                 pending_count = 0
                 last_known_server_status = None
                 last_known_team = None
+                last_known_scores = None
+                pending_scores = None
+                pending_scores_count = 0
                 if game_was_running and last_status != NOT_IN_GAME:
                     # Game just closed - this is a certain signal (not a
                     # flaky OCR read), so no need to debounce it.
