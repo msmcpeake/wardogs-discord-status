@@ -213,9 +213,11 @@ distinguishable - it shows up in the embed title and the not-in-game text.
 
 To onboard a friend:
 
-1. Send them this repo (it's private - add them as a GitHub collaborator,
-   or zip the folder minus `.env`/`last_status.json`/`wardogs_status.log`,
-   which are all machine-specific and gitignored anyway).
+1. Point them at this repo - they can clone it, grab the latest
+   [release](https://github.com/msmcpeake/wardogs-discord-status/releases)
+   zip, or you can just copy the folder to their
+   PC minus `.env`/`last_status.json`/`wardogs_status.log`, which are all
+   machine-specific and already gitignored.
 2. They set up **Prerequisites** above (Python, Tesseract, `pip install -r
    requirements.txt`).
 3. They copy `.env.example` to `.env`, set `DISPLAY_NAME` to their own name,
