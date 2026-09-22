@@ -10,9 +10,20 @@ each time, so there's no notification spam and no rate-limit trouble
 rename limit). Only runs OCR while `WardogsClient-Win64-Shipping.exe` is
 actually running.
 
-Already installed on this machine: Python 3.13, Tesseract OCR
-(`C:\Program Files\Tesseract-OCR\tesseract.exe`), and the Python packages in
-`requirements.txt`.
+## Prerequisites
+
+1. **[Python 3.13](https://www.python.org/downloads/)** - during install,
+   check **Add python.exe to PATH**. (Any recent Python 3 works; 3.13 is
+   just what this was built/tested on.)
+2. **[Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)** - grab
+   the Windows installer from the "tesseract-ocr-w64-setup-*.exe" link.
+   Install to the default location (`C:\Program Files\Tesseract-OCR`); if
+   you put it somewhere else, set `TESSERACT_CMD` in `.env` (step 3) to the
+   full path of `tesseract.exe`.
+3. From this project's folder, install the Python packages it needs:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ## 1. Create a Discord bot
 
@@ -197,8 +208,8 @@ To onboard a friend:
 1. Send them this repo (it's private - add them as a GitHub collaborator,
    or zip the folder minus `.env`/`last_status.json`/`wardogs_status.log`,
    which are all machine-specific and gitignored anyway).
-2. They install Python 3.13 and Tesseract OCR, then `pip install -r
-   requirements.txt`.
+2. They set up **Prerequisites** above (Python, Tesseract, `pip install -r
+   requirements.txt`).
 3. They copy `.env.example` to `.env`, set `DISPLAY_NAME` to their own name,
    and fill in `DISCORD_STATUS_CHANNEL_ID` (same channel ID as you - copy it
    from your own `.env`).
