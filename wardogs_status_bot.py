@@ -105,6 +105,14 @@ SCORE_UPDATE_INTERVAL_SECONDS = float(os.getenv("SCORE_UPDATE_INTERVAL_SECONDS",
 DEFAULT_MONITOR_INDEX = 1
 MONITOR_INDEX = int(os.getenv("MONITOR_INDEX", str(DEFAULT_MONITOR_INDEX)))
 
+# Whose status this is, shown in the embed title and the not-in-game text -
+# lets multiple people run their own copy of this script, each posting/
+# editing their own message in the same channel (see README "Multiple
+# people"). Each install's own local last_status.json already keeps their
+# message IDs separate; this is just what tells the messages apart visually.
+DEFAULT_DISPLAY_NAME = "Matrix"
+DISPLAY_NAME = os.getenv("DISPLAY_NAME", DEFAULT_DISPLAY_NAME)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -144,7 +152,7 @@ SERVER_BROWSER_RE = re.compile(r"SERVER\s*BROWSER", re.IGNORECASE)
 # above it on the same screen.
 QUEUE_RE = re.compile(r"SERVER\s*QUEUE.*?POSITION\s*(\d+)\s*OF\s*(\d+)(.*)", re.IGNORECASE | re.DOTALL)
 
-NOT_IN_GAME = "Matrix is not in a game"
+NOT_IN_GAME = f"{DISPLAY_NAME} is not in a game"
 
 
 def is_game_running() -> bool:
@@ -457,7 +465,7 @@ def _build_embed(text: str, scores=None):
     if scores:
         description += f"\n\nScore: {_format_scores(scores)}"
     return {
-        "title": "Current Wardogs Server",
+        "title": f"Current Wardogs Server — {DISPLAY_NAME}",
         "description": description,
         "color": EMBED_COLOR_NOT_IN_GAME if text == NOT_IN_GAME else EMBED_COLOR_IN_GAME,
         "timestamp": _round_down_to_5_minutes(datetime.now(timezone.utc)).isoformat(),

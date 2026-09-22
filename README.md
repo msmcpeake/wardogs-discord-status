@@ -167,6 +167,51 @@ If you ever move this folder, re-register the task pointing at the new
 path (ask me to redo it, or open Task Scheduler -> find
 `WardogsDiscordStatus` -> Properties -> Actions -> edit the path).
 
+## 7. Multiple people
+
+Anyone else who wants their own status message in the same channel needs
+their own copy of this project, running on their own PC, with their own
+`.env` - each install is fully independent: it has its own capture regions
+(everyone's game resolution/UI scale is different), its own `MONITOR_INDEX`,
+and its own `last_status.json`, so their message IDs never collide with
+anyone else's even in the same channel. Set `DISPLAY_NAME` in their `.env`
+to their own name (e.g. `DISPLAY_NAME=Ghost`) so the messages are
+distinguishable - it shows up in the embed title and the not-in-game text.
+
+To onboard a friend:
+
+1. Send them this repo (it's private - add them as a GitHub collaborator,
+   or zip the folder minus `.env`/`last_status.json`/`wardogs_status.log`,
+   which are all machine-specific and gitignored anyway).
+2. They install Python 3.13 and Tesseract OCR, then `pip install -r
+   requirements.txt`.
+3. They copy `.env.example` to `.env`, set `DISPLAY_NAME` to their own name,
+   and fill in `DISCORD_STATUS_CHANNEL_ID` (same channel ID as you - copy it
+   from your own `.env`).
+4. **Bot token - two options:**
+   - **Share your bot's token (simplest).** They use the exact same
+     `DISCORD_BOT_TOKEN` you do. No extra Discord setup needed - your bot's
+     existing permission overwrite in the channel (step 2 above) already
+     covers it. The tradeoff: your token now lives on another person's
+     machine, and anyone who has it can post as your bot / edit or delete
+     anything it's posted, anywhere it has access. Fine for a small trusted
+     group; regenerate the token in the Developer Portal if that ever stops
+     being true (this revokes it for everyone using it, so all copies need
+     the new one).
+   - **Give them their own bot (more isolated).** They follow "1. Create a
+     Discord bot" themselves to make their own bot application/token, then
+     you add their bot to the channel's permission overwrites (step 2) the
+     same way yours was added, so it can actually post there. More setup,
+     but nobody's token but their own can act as their bot.
+5. They run `python region_preview.py` to set `CAPTURE_REGION` /
+   `TEAM_ICON_REGION` / `SCORE_REGION` / `MONITOR_INDEX` for their own
+   screen (step 4 above), confirm with `--once`, then set up their own
+   Task Scheduler entry the same way yours is set up (step 6 above - ask me
+   to register it if they want the always-running/tray-icon setup).
+
+Each person's message updates completely independently - no rate-limit or
+notification interaction between them, since they're separate messages.
+
 ## Notes / limits
 
 - The status format is `Region #N · ID ServerID` (e.g.
