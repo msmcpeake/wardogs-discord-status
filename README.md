@@ -108,6 +108,10 @@ window with a screenshot of your monitor and all three boxes drawn on it.
 - **Wrong monitor?** The dropdown lists every display by number and
   resolution. Pick the one Wardogs is actually on, then click **Use this
   monitor** to save that as `MONITOR_INDEX` in `.env`.
+- **Faction icon setting.** In Wardogs, go to **Settings -> Interface** and
+  set **Faction** to **Always On**. If it's left on its default (only shown
+  briefly after a change), the HUD icon won't be visible most of the time
+  and faction detection won't work.
 - **Get the game on screen.** Use **Capture in 5s**, then alt-tab into
   Wardogs within those 5 seconds and get to a state showing everything at
   once - sitting in the pause menu (Esc) during a match shows the server
@@ -258,6 +262,9 @@ notification interaction between them, since they're separate messages.
   X of Y)` instead - see `parse_queue()`. The queue's countdown timer is
   deliberately not included (it ticks every second, which would otherwise
   count as a status "change" on nearly every poll).
+- Faction detection requires **Faction** set to **Always On** under
+  **Settings -> Interface** in-game (see step 4) - otherwise the HUD icon
+  it samples isn't reliably on screen.
 - While actually in a match, the icon shown is your faction's actual logo
   (Lonestar blue / Valkyra red / Manticore green - custom emoji re-uploaded
   from the official Wardogs Discord, same as the generic fallback icon),
