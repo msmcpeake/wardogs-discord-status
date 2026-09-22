@@ -20,7 +20,10 @@ actually running.
    Install to the default location (`C:\Program Files\Tesseract-OCR`); if
    you put it somewhere else, set `TESSERACT_CMD` in `.env` (step 3) to the
    full path of `tesseract.exe`.
-3. From this project's folder, install the Python packages it needs:
+3. Install the Python packages this project needs: double-click
+   [`install.bat`](install.bat) in this folder (a window opens, installs
+   them, and tells you when it's done - press any key to close it). Or, from
+   a terminal in this folder:
    ```bash
    pip install -r requirements.txt
    ```
