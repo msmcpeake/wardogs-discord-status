@@ -75,23 +75,37 @@ the token immediately and ask for help removing it from history.
 
 ## 4. Tune the capture regions (do this once, without touching Discord)
 
-**See them first.** The script reads two boxes off your screen -
-`CAPTURE_REGION` (the OCR crop), `TEAM_ICON_REGION` (the faction icon), and
-`SCORE_REGION` (the scoreboard) - as fractions of one monitor. Run:
+The script reads three boxes off your screen - `CAPTURE_REGION` (the OCR
+crop), `TEAM_ICON_REGION` (the faction icon), and `SCORE_REGION` (the
+scoreboard) - as fractions of one monitor. Run:
 
 ```bash
 python region_preview.py
 ```
 
-(or right-click the tray icon -> **Show capture regions...**) to see a
-screenshot of your monitor with both boxes drawn on it and their real pixel
-sizes listed underneath. Use **Capture in 5s** to switch into the game
-first and grab a frame with the pause menu or HUD up, so you can check the
-boxes actually cover what they need to. The monitor dropdown shows every
-display's number and resolution - if Wardogs isn't on your primary display,
-set `MONITOR_INDEX` in `.env` to that number. The preview is read-only: edit
-`.env`, hit **Refresh** to preview the new boxes, then restart the app
-(tray icon -> Quit, relaunch) to apply them.
+(or right-click the tray icon -> **Set capture regions...**) to open a
+window with a screenshot of your monitor and all three boxes drawn on it.
+
+- **Wrong monitor?** The dropdown lists every display by number and
+  resolution. Pick the one Wardogs is actually on, then click **Use this
+  monitor** to save that as `MONITOR_INDEX` in `.env`.
+- **Get the game on screen.** Use **Capture in 5s**, then alt-tab into
+  Wardogs within those 5 seconds and get to a state showing everything at
+  once - sitting in the pause menu (Esc) during a match shows the server
+  panel, team icon, and HUD scoreboard together.
+- **Draw each box.** Pick a region with the radio buttons above the image
+  (OCR capture region / Team icon region / Scoreboard region), then click
+  and drag directly on the screenshot over the right part of the game's UI.
+  It saves to `.env` immediately - no hand-editing fractions. Repeat for
+  each of the three. **Reset to default** puts the selected one back to its
+  original value if you want to start over.
+- Restart the app afterward (tray icon -> Quit, relaunch) to actually apply
+  whatever you changed - the preview window only ever reads/writes `.env`,
+  it doesn't affect the running bot until it's restarted.
+
+You can still hand-edit the fractions directly in `.env` if you'd rather
+(`left,top,right,bottom`, each 0.0-1.0) - hit **Refresh** in the preview to
+see those changes reflected.
 
 **Then confirm with OCR.** Launch Wardogs, join a match, hit **Esc** so the
 panel with `CURRENT SERVER` / `SERVER ID` is on screen, then in another

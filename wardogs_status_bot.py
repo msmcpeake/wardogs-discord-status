@@ -75,7 +75,7 @@ HEARTBEAT_INTERVAL_SECONDS = float(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "300"
 # BROWSER button on the main menu - all measured to sit within this band.
 # Smaller region = less for Tesseract to process = faster polling, so widen
 # this only as far as you actually need to if something isn't being found.
-# (Run region_preview.py, or use the tray icon's "Show capture regions...",
+# (Run region_preview.py, or use the tray icon's "Set capture regions...",
 # to see these drawn over a real screenshot.)
 DEFAULT_CAPTURE_REGION = "0,0.65,1.0,1.0"
 CAPTURE_REGION = os.getenv("CAPTURE_REGION", DEFAULT_CAPTURE_REGION)
@@ -729,7 +729,7 @@ def run_tray(dry_run: bool):
 
     image = Image.open(TRAY_ICON_FILE)
     menu = pystray.Menu(
-        pystray.MenuItem("Show capture regions...", on_show_regions),
+        pystray.MenuItem("Set capture regions...", on_show_regions),
         pystray.MenuItem("Quit", on_quit),
     )
     icon = pystray.Icon("wardogs_status", image, "Wardogs Status: starting...", menu)
