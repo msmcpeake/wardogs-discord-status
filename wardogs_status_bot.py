@@ -465,7 +465,7 @@ def _build_embed(text: str, scores=None):
     if scores:
         description += f"\n\nScore: {_format_scores(scores)}"
     return {
-        "title": f"Current Wardogs Server — {DISPLAY_NAME}",
+        "title": f"Current Wardogs Server - {DISPLAY_NAME}",
         "description": description,
         "color": EMBED_COLOR_NOT_IN_GAME if text == NOT_IN_GAME else EMBED_COLOR_IN_GAME,
         "timestamp": _round_down_to_5_minutes(datetime.now(timezone.utc)).isoformat(),

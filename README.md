@@ -51,7 +51,7 @@ Then get the channel ID: Discord -> User Settings -> **Advanced** -> enable
 ## 3. Configure the script
 
 ```bash
-cd C:\claude\wardogs-discord-status
+cd C:\path\to\wardogs-discord-status
 copy .env.example .env
 ```
 
