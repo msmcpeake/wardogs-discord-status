@@ -10,6 +10,11 @@ each time, so there's no notification spam and no rate-limit trouble
 rename limit). Only runs OCR while `WardogsClient-Win64-Shipping.exe` is
 actually running.
 
+<p align="center">
+  <img src="docs/discord-message-queued.png" alt="Discord embed showing 'Queued for Central #1 (position 15 of 15)'" width="49%">
+  <img src="docs/discord-message-score.png" alt="Discord embed showing 'East #145 - ID 469618' with live team scores" width="49%">
+</p>
+
 ## Prerequisites
 
 1. **[Python 3.13](https://www.python.org/downloads/)** - during install,
