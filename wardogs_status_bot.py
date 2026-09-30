@@ -486,6 +486,13 @@ def set_status_message(text: str, message_id: str | None, scores=None):
     if message_id:
         url = f"https://discord.com/api/v10/channels/{DISCORD_STATUS_CHANNEL_ID}/messages/{message_id}"
         resp = requests.patch(url, headers=headers, json=body, timeout=10)
+        if resp.status_code == 404 and resp.json().get("code") == 10008:
+            # Unknown Message: the tracked message was deleted in Discord.
+            # Post a fresh one rather than failing every update forever.
+            log.warning("Status message %s no longer exists - posting a new one.", message_id)
+            message_id = None
+            url = f"https://discord.com/api/v10/channels/{DISCORD_STATUS_CHANNEL_ID}/messages"
+            resp = requests.post(url, headers=headers, json=body, timeout=10)
     else:
         url = f"https://discord.com/api/v10/channels/{DISCORD_STATUS_CHANNEL_ID}/messages"
         resp = requests.post(url, headers=headers, json=body, timeout=10)
@@ -560,13 +567,20 @@ def run_once():
     print(" - ".join(str(x) for x in scores) if scores else "(scoreboard not readable)")
 
 
-def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status=None):
+def run_loop(
+    dry_run: bool,
+    stop_event: threading.Event | None = None,
+    on_status=None,
+    paused_event: threading.Event | None = None,
+):
     if not dry_run and (not DISCORD_BOT_TOKEN or not DISCORD_STATUS_CHANNEL_ID):
         log.error("Set DISCORD_BOT_TOKEN and DISCORD_STATUS_CHANNEL_ID in .env, or pass --dry-run.")
         sys.exit(1)
 
     if stop_event is None:
         stop_event = threading.Event()  # never set - just lets the loop below use one code path
+    if paused_event is None:
+        paused_event = threading.Event()  # never set - monitoring is never paused
 
     last_status, message_id, last_applied_at = load_state()
     if last_applied_at is None:
@@ -618,9 +632,29 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
     pending_scores = None
     pending_scores_count = 0
     last_applied_scores = None
+    was_paused = False
 
     while not stop_event.is_set():
         try:
+            if paused_event.is_set():
+                # Frozen: no capturing, no Discord updates (including the
+                # heartbeat) - the message just sits as-is until resumed.
+                was_paused = True
+                if stop_event.wait(POLL_INTERVAL_SECONDS):
+                    log.info("Stopping.")
+                    break
+                continue
+            if was_paused:
+                # Just resumed - re-derive everything from scratch rather
+                # than trusting state left over from before the pause (the
+                # game may have been closed/reopened/switched servers while
+                # we weren't watching).
+                pending_status, pending_count = None, 0
+                last_known_server_status, last_known_team = None, None
+                last_known_scores, pending_scores, pending_scores_count = None, None, 0
+                game_was_running = is_game_running()
+                was_paused = False
+
             running = is_game_running()
             if running:
                 _, server_status, team, scores = capture_and_parse()
@@ -692,12 +726,26 @@ def run_loop(dry_run: bool, stop_event: threading.Event | None = None, on_status
 
 def run_tray(dry_run: bool):
     stop_event = threading.Event()
+    paused_event = threading.Event()
     icon_ref = {}
 
     def on_status(status):
+        icon_ref["last_status"] = status
         icon = icon_ref.get("icon")
-        if icon:
+        # Don't let a trailing update from right before a pause took effect
+        # clobber the "Paused" tooltip.
+        if icon and not paused_event.is_set():
             icon.title = f"Wardogs Status: {status}"[:127]  # tray tooltips have an OS-level length limit
+
+    def on_toggle_pause(icon, _item):
+        if paused_event.is_set():
+            paused_event.clear()
+            log.info("Monitoring resumed from tray.")
+            icon.title = f"Wardogs Status: {icon_ref.get('last_status', 'starting...')}"[:127]
+        else:
+            paused_event.set()
+            log.info("Monitoring paused from tray - message left as-is until resumed.")
+            icon.title = "Wardogs Status: Paused"
 
     def on_quit(icon, _item):
         log.info("Quit requested from tray icon.")
@@ -722,13 +770,24 @@ def run_tray(dry_run: bool):
         # instead of racing the tray icon's own startup.
         icon.visible = True
         thread = threading.Thread(
-            target=run_loop, kwargs={"dry_run": dry_run, "stop_event": stop_event, "on_status": on_status}, daemon=True
+            target=run_loop,
+            kwargs={
+                "dry_run": dry_run,
+                "stop_event": stop_event,
+                "on_status": on_status,
+                "paused_event": paused_event,
+            },
+            daemon=True,
         )
         thread.start()
         icon_ref["thread"] = thread
 
     image = Image.open(TRAY_ICON_FILE)
     menu = pystray.Menu(
+        pystray.MenuItem(
+            lambda _item: "Resume monitoring" if paused_event.is_set() else "Pause monitoring",
+            on_toggle_pause,
+        ),
         pystray.MenuItem("Set capture regions...", on_show_regions),
         pystray.MenuItem("Quit", on_quit),
     )
