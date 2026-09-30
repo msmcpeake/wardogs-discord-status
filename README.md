@@ -187,7 +187,10 @@ interval.
 `^` hidden-icons arrow the first time; drag it out to keep it always
 visible) instead of a console window, and logs to `wardogs_status.log` in
 this folder instead of the terminal, since there is no terminal when run
-this way. Right-click the tray icon -> **Quit** to stop it.
+this way. Right-click the tray icon for **Pause monitoring** (stops
+watching/updating entirely - the Discord message is left exactly as-is
+until you **Resume monitoring** from the same menu, rather than being
+forced to "not in a game") and **Quit** to stop it completely.
 
 A Task Scheduler task named **WardogsDiscordStatus** is already registered
 to launch this automatically (hidden, via `pythonw.exe`) every time you log
