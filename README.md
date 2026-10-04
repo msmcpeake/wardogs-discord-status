@@ -265,6 +265,12 @@ notification interaction between them, since they're separate messages.
   X of Y)` instead - see `parse_queue()`. The queue's countdown timer is
   deliberately not included (it ticks every second, which would otherwise
   count as a status "change" on nearly every poll).
+- When you go from "not in a game" to a real server and the Discord message
+  is successfully updated, a Windows toast notification pops up with the
+  server (e.g. "Central #277 · ID 904261") as confirmation. It only fires on
+  that transition - not on score updates, heartbeats, or server switches.
+  Set `TOAST_NOTIFICATIONS=0` in `.env` to turn it off. (Toasts may not show
+  over an exclusive-fullscreen game; borderless/windowed is fine.)
 - Faction detection requires **Faction** set to **Always On** under
   **Settings -> Interface** in-game (see step 4) - otherwise the HUD icon
   it samples isn't reliably on screen.

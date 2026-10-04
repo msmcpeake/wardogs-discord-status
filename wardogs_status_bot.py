@@ -98,6 +98,9 @@ SCORE_REGION = os.getenv("SCORE_REGION", DEFAULT_SCORE_REGION)
 # Scores tick up constantly during a match, so score-only changes are pushed
 # to Discord at most this often (a new server/team change is never delayed).
 SCORE_UPDATE_INTERVAL_SECONDS = float(os.getenv("SCORE_UPDATE_INTERVAL_SECONDS", "30"))
+# Windows toast (from the tray icon) the first time a server is posted after
+# being "not in a game" - confirmation that the message actually updated.
+TOAST_NOTIFICATIONS = os.getenv("TOAST_NOTIFICATIONS", "1").strip().lower() not in ("0", "false", "no", "off")
 
 # Which monitor Wardogs runs on, as mss numbers them: 1 is the primary
 # display, 2+ are the others (region_preview.py lists them with their
@@ -572,6 +575,7 @@ def run_loop(
     stop_event: threading.Event | None = None,
     on_status=None,
     paused_event: threading.Event | None = None,
+    on_joined=None,
 ):
     if not dry_run and (not DISCORD_BOT_TOKEN or not DISCORD_STATUS_CHANNEL_ID):
         log.error("Set DISCORD_BOT_TOKEN and DISCORD_STATUS_CHANNEL_ID in .env, or pass --dry-run.")
@@ -600,6 +604,7 @@ def run_loop(
         nonlocal last_status, message_id, cooldown_until, last_applied_at, last_applied_scores
         if time.time() < cooldown_until:
             return  # still cooling down from a rate limit, try again later
+        previous_status = last_status
         scores = last_known_scores if is_in_match(status) else None
         if dry_run:
             log.info("[dry-run] would set status message to: %s (scores %s)", status, scores)
@@ -618,6 +623,8 @@ def run_loop(
         last_applied_scores = scores
         if on_status:
             on_status(last_status)
+        if on_joined and previous_status == NOT_IN_GAME and is_in_match(status):
+            on_joined(status)
 
     # Server and team are read independently (the team icon isn't visible
     # while the pause menu is open, confirmed in practice, so they're
@@ -737,6 +744,15 @@ def run_tray(dry_run: bool):
         if icon and not paused_event.is_set():
             icon.title = f"Wardogs Status: {status}"[:127]  # tray tooltips have an OS-level length limit
 
+    def on_joined(status):
+        icon = icon_ref.get("icon")
+        if not TOAST_NOTIFICATIONS or not icon:
+            return
+        try:
+            icon.notify(_strip_team_prefix(status), "Wardogs status posted to Discord")
+        except Exception:
+            log.warning("Couldn't show the toast notification.", exc_info=True)
+
     def on_toggle_pause(icon, _item):
         if paused_event.is_set():
             paused_event.clear()
@@ -776,6 +792,7 @@ def run_tray(dry_run: bool):
                 "stop_event": stop_event,
                 "on_status": on_status,
                 "paused_event": paused_event,
+                "on_joined": on_joined,
             },
             daemon=True,
         )
