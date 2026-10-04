@@ -266,11 +266,11 @@ notification interaction between them, since they're separate messages.
   deliberately not included (it ticks every second, which would otherwise
   count as a status "change" on nearly every poll).
 - When you go from "not in a game" to a real server and the Discord message
-  is successfully updated, a Windows toast notification pops up with the
-  server (e.g. "Central #277 · ID 904261") as confirmation. It only fires on
-  that transition - not on score updates, heartbeats, or server switches.
-  Set `TOAST_NOTIFICATIONS=0` in `.env` to turn it off. (Toasts may not show
-  over an exclusive-fullscreen game; borderless/windowed is fine.)
+  is successfully updated, a short chime plays as confirmation. It only
+  plays on that transition - not on score updates, heartbeats, or server
+  switches - and it goes through your default audio device, so a fullscreen
+  game doesn't hide it. In `.env`, set `JOIN_SOUND=0` to turn it off, or
+  `JOIN_SOUND=C:\path\to\your.wav` to use your own sound.
 - Faction detection requires **Faction** set to **Always On** under
   **Settings -> Interface** in-game (see step 4) - otherwise the HUD icon
   it samples isn't reliably on screen.

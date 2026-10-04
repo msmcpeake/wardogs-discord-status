@@ -36,6 +36,7 @@ import subprocess
 import sys
 import threading
 import time
+import winsound
 from datetime import datetime, timedelta, timezone
 
 import mss
@@ -98,9 +99,12 @@ SCORE_REGION = os.getenv("SCORE_REGION", DEFAULT_SCORE_REGION)
 # Scores tick up constantly during a match, so score-only changes are pushed
 # to Discord at most this often (a new server/team change is never delayed).
 SCORE_UPDATE_INTERVAL_SECONDS = float(os.getenv("SCORE_UPDATE_INTERVAL_SECONDS", "30"))
-# Windows toast (from the tray icon) the first time a server is posted after
-# being "not in a game" - confirmation that the message actually updated.
-TOAST_NOTIFICATIONS = os.getenv("TOAST_NOTIFICATIONS", "1").strip().lower() not in ("0", "false", "no", "off")
+# Short sound the first time a server is posted after being "not in a game" -
+# confirmation that the message actually updated. Plays through the default
+# audio device, so unlike a toast it isn't hidden by a fullscreen game.
+# 1 = the default chime, 0 = off, or a path to your own .wav file.
+JOIN_SOUND = os.getenv("JOIN_SOUND", "1").strip()
+DEFAULT_JOIN_SOUND_FILE = r"C:\Windows\Media\Windows Hardware Insert.wav"
 
 # Which monitor Wardogs runs on, as mss numbers them: 1 is the primary
 # display, 2+ are the others (region_preview.py lists them with their
@@ -731,6 +735,23 @@ def run_loop(
             break
 
 
+def play_join_sound():
+    """Plays JOIN_SOUND without blocking. Falls back to the system beep if the
+    wav file is missing."""
+    setting = JOIN_SOUND.lower()
+    if setting in ("", "0", "false", "no", "off"):
+        return
+    path = DEFAULT_JOIN_SOUND_FILE if setting in ("1", "true", "yes", "on") else JOIN_SOUND
+    try:
+        if os.path.isfile(path):
+            winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        log.info("Join sound played for new server.")
+    except Exception:
+        log.warning("Couldn't play the join sound.", exc_info=True)
+
+
 def run_tray(dry_run: bool):
     stop_event = threading.Event()
     paused_event = threading.Event()
@@ -743,16 +764,6 @@ def run_tray(dry_run: bool):
         # clobber the "Paused" tooltip.
         if icon and not paused_event.is_set():
             icon.title = f"Wardogs Status: {status}"[:127]  # tray tooltips have an OS-level length limit
-
-    def on_joined(status):
-        icon = icon_ref.get("icon")
-        if not TOAST_NOTIFICATIONS or not icon:
-            return
-        try:
-            icon.notify(_strip_team_prefix(status), "Wardogs status posted to Discord")
-            log.info("Toast notification sent for: %s", _strip_team_prefix(status))
-        except Exception:
-            log.warning("Couldn't show the toast notification.", exc_info=True)
 
     def on_toggle_pause(icon, _item):
         if paused_event.is_set():
@@ -793,7 +804,7 @@ def run_tray(dry_run: bool):
                 "stop_event": stop_event,
                 "on_status": on_status,
                 "paused_event": paused_event,
-                "on_joined": on_joined,
+                "on_joined": lambda _status: play_join_sound(),
             },
             daemon=True,
         )
