@@ -750,6 +750,7 @@ def run_tray(dry_run: bool):
             return
         try:
             icon.notify(_strip_team_prefix(status), "Wardogs status posted to Discord")
+            log.info("Toast notification sent for: %s", _strip_team_prefix(status))
         except Exception:
             log.warning("Couldn't show the toast notification.", exc_info=True)
 
